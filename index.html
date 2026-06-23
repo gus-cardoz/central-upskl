@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="pt-BR" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>UPSKL · Central de operações</title>
+    <meta name="description" content="Design system da UPSKL — Steel & Sand / Editorial Ops." />
+    <!-- Pré-paint: aplica tema/marca salvos antes do primeiro render (sem FOUC).
+         Padrão = escuro; respeita prefers-color-scheme só na primeira visita. -->
+    <script>
+      (function () {
+        try {
+          var root = document.documentElement
+          var t = localStorage.getItem('upskl-theme')
+          if (!t) {
+            t = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'
+          }
+          root.setAttribute('data-theme', t)
+          var b = localStorage.getItem('upskl-brand')
+          if (b && b !== 'default') root.setAttribute('data-brand', b)
+        } catch (e) {}
+      })()
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

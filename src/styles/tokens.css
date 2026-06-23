@@ -1,0 +1,309 @@
+/* ============================================================================
+   UPSKL · Design Tokens — "Steel & Sand / Editorial Ops"
+   ----------------------------------------------------------------------------
+   Fonte única de verdade. O Tailwind referencia estas variáveis; componentes
+   nunca devem hardcodar hex.
+
+   ARQUITETURA EM CAMADAS (white-label, agora ATIVA):
+   - Tokens de chrome (estrutura): superfícies, linhas, texto, raios, motion.
+     Mudam só entre temas (claro/escuro), nunca por cliente.
+   - Camada temável por cliente: APENAS o accent (steel-*) + foreground sobre
+     accent (--accent-fg). Um seletor [data-brand="x"] sobrescreve SÓ isso.
+   - Tema: [data-theme="light"] no <html> troca todo o chrome para a versão
+     clara. Sem atributo (ou "dark") = escuro, o padrão.
+
+   COMBINAÇÃO: data-theme e data-brand se compõem. Ex.: claro + marca ember.
+   ========================================================================== */
+
+:root {
+  /* ---- Cores · Fundo (frio, em camadas para profundidade) ---------------- */
+  --ink: #0a0b0d;          /* canvas do app */
+  --ink-deep: #07080a;     /* poços / fundo da sidebar atrás dos cards */
+  --slate-900: #101218;    /* superfície (cards) */
+  --slate-800: #161922;    /* superfície elevada / hover */
+  --slate-700: #1e2230;    /* popovers, linhas ativas */
+  --slate-600: #2a2f3d;    /* superfície forte / pressed */
+
+  /* ---- Cores · Linhas (hairlines, brancos frios de baixa opacidade) ------ */
+  --line-subtle: rgba(180, 195, 225, 0.06);
+  --line: rgba(180, 195, 225, 0.1);
+  --line-strong: rgba(180, 195, 225, 0.18);
+
+  /* ---- Cores · Texto (off-whites frios — nunca #fff puro) ---------------- */
+  --text-strong: #f0f2f7;
+  --text: #c2c9d6;         /* corpo padrão */
+  --text-muted: #828b9c;
+  --text-faint: #565e6e;
+  --text-on-sand: #1a1814; /* texto escuro sobre superfícies Sand */
+
+  /* ---- Foreground sobre preenchimento de accent + puck de controle ------- */
+  /* Texto sobre o preenchimento azul (steel) é sempre claro, nos dois temas. */
+  --accent-fg: #ffffff;
+  /* Puck do Switch — sempre claro, independente do tema. */
+  --knob: #f0f2f7;
+
+  /* ====================================================================== */
+  /* camada temável — accent primário (cliente sobrescreve via data-brand)   */
+  /* ---- Steel — ações primárias, links, foco, seleção -------------------- */
+  --steel-300: #a9bad9;
+  --steel-400: #8aa0cb;
+  --steel-500: #6e89be;    /* primário */
+  --steel-600: #56719f;
+  --steel-700: #3f5577;
+  --steel-tint: rgba(110, 137, 190, 0.14);  /* fills sutis / selecionado */
+  --steel-glow: rgba(110, 137, 190, 0.3);   /* anel de foco / glow */
+  /* fim camada temável (accent)                                            */
+  /* ====================================================================== */
+
+  /* ====================================================================== */
+  /* camada temável — superfície de ênfase quente                           */
+  /* ---- Sand — assinatura quente (ênfase pontual) ----------------------- */
+  --sand-100: #f2eee5;
+  --sand-200: #e3ddd1;     /* superfície clara de ênfase (card invertido) */
+  --sand-300: #cdc5b5;
+  --sand-deep: #2a2620;    /* variante de superfície quente-escura */
+  --sand-tint: rgba(227, 221, 209, 0.1);
+  /* fim camada temável (sand)                                              */
+  /* ====================================================================== */
+
+  /* ---- Cores · Status (dessaturados, sofisticados — nada de neon) -------- */
+  --ok: #6fbf95;
+  --ok-tint: rgba(111, 191, 149, 0.14);
+  --err: #dd7a70;
+  --err-tint: rgba(221, 122, 112, 0.14);
+  --warn: #d8a75c;
+  --warn-tint: rgba(216, 167, 92, 0.14);
+  /* info: reutiliza o Steel */
+
+  /* ---- Ambient glow (no máximo um por view, sutil) ----------------------- */
+  --glow-steel: radial-gradient(circle at 50% 0%, rgba(110, 137, 190, 0.12), transparent 70%);
+
+  /* ---- Canais RGB (espelham os hex acima) ------------------------------- */
+  /* Permitem modificadores de opacidade do Tailwind (ex.: bg-slate-900/40)
+     via rgb(var(--x-rgb) / <alpha-value>). Sobrescreva junto com o hex no
+     white-label. */
+  --ink-rgb: 10 11 13;
+  --ink-deep-rgb: 7 8 10;
+  --slate-900-rgb: 16 18 24;
+  --slate-800-rgb: 22 25 34;
+  --slate-700-rgb: 30 34 48;
+  --slate-600-rgb: 42 47 61;
+  --steel-300-rgb: 169 186 217;
+  --steel-400-rgb: 138 160 203;
+  --steel-500-rgb: 110 137 190;
+  --steel-600-rgb: 86 113 159;
+  --steel-700-rgb: 63 85 119;
+  --sand-100-rgb: 242 238 229;
+  --sand-200-rgb: 227 221 209;
+  --sand-300-rgb: 205 197 181;
+  --sand-deep-rgb: 42 38 32;
+  --ok-rgb: 111 191 149;
+  --err-rgb: 221 122 112;
+  --warn-rgb: 216 167 92;
+  --text-strong-rgb: 240 242 247;
+  --text-rgb: 194 201 214;
+  --text-muted-rgb: 130 139 156;
+  --text-faint-rgb: 86 94 110;
+  --text-on-sand-rgb: 26 24 20;
+
+  /* ---- Tipografia · Famílias --------------------------------------------- */
+  /* Host Grotesk (variável) — display/títulos, pesos 500/600/700 */
+  --font-display: 'Host Grotesk Variable', 'Inter', system-ui, sans-serif;
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  /* "Voz de dados" (metadados/IDs/timestamps) — Inter com números tabulares.
+     Mantém o nome --font-mono pelo papel funcional, não pela monoespaçação. */
+  --font-mono: 'Inter', system-ui, -apple-system, sans-serif;
+
+  /* ---- Espaçamento (base 4px) -------------------------------------------- */
+  --space-0: 0px;
+  --space-2: 2px;
+  --space-4: 4px;
+  --space-6: 6px;
+  --space-8: 8px;
+  --space-12: 12px;
+  --space-16: 16px;
+  --space-20: 20px;
+  --space-24: 24px;
+  --space-32: 32px;
+  --space-40: 40px;
+  --space-48: 48px;
+  --space-64: 64px;
+  --space-80: 80px;
+  --space-96: 96px;
+  --space-128: 128px;
+
+  /* ---- Raio --------------------------------------------------------------- */
+  --r-xs: 6px;     /* inputs, chips */
+  --r-sm: 8px;
+  --r-md: 10px;    /* botões, badges */
+  --r-lg: 14px;    /* cards */
+  --r-xl: 18px;    /* painéis, modais */
+  --r-2xl: 24px;   /* cards-herói */
+  --r-full: 9999px;
+
+  /* ---- Elevação (sutil no escuro; profundidade vem de superfície+linha+glow) */
+  --e1: 0 1px 2px rgba(0, 0, 0, 0.45);
+  --e2: 0 4px 14px rgba(0, 0, 0, 0.4);
+  --e3: 0 14px 40px rgba(0, 0, 0, 0.5);
+  --focus-ring: 0 0 0 3px var(--steel-glow);
+  --glow-active: 0 0 0 1px var(--steel-glow), 0 0 28px var(--steel-tint);
+
+  /* ---- Motion ------------------------------------------------------------- */
+  --dur-fast: 120ms;
+  --dur: 180ms;
+  --dur-slow: 260ms;
+  --ease-out: cubic-bezier(0.22, 0.8, 0.26, 1);
+  --ease-inout: cubic-bezier(0.65, 0, 0.35, 1);
+
+  /* ---- Z-index ------------------------------------------------------------ */
+  --z-dropdown: 1000;
+  --z-sticky: 1100;
+  --z-drawer: 1200;
+  --z-modal: 1300;
+  --z-popover: 1400;
+  --z-toast: 1500;
+  --z-tooltip: 1600;
+}
+
+/* ============================================================================
+   TEMA CLARO — [data-theme="light"]
+   ----------------------------------------------------------------------------
+   Mesma linguagem "Steel & Sand", invertida para superfícies claras:
+   - canvas cinza-frio, cards brancos acima dele, hover/popover progressivamente
+     mais cinza (convenção de modo claro: interação escurece);
+   - texto quase-preto frio; linhas escuras de baixa opacidade;
+   - steel profundo (pop sobre branco) com foreground branco;
+   - sand vira creme distinto do branco — segue sendo a assinatura quente;
+   - status saturados o bastante para ler sobre branco.
+   ========================================================================== */
+:root[data-theme='light'] {
+  /* Fundos */
+  --ink: #e9ecf1;
+  --ink-deep: #dfe3ea;
+  --slate-900: #ffffff;
+  --slate-800: #f0f3f7;
+  --slate-700: #e7ebf1;
+  --slate-600: #d7dce5;
+
+  /* Linhas */
+  --line-subtle: rgba(18, 28, 48, 0.06);
+  --line: rgba(18, 28, 48, 0.1);
+  --line-strong: rgba(18, 28, 48, 0.16);
+
+  /* Texto */
+  --text-strong: #14171d;
+  --text: #3c4350;
+  --text-muted: #687181;
+  --text-faint: #98a0af;
+  --text-on-sand: #1a1814;
+
+  /* Foreground sobre accent + puck */
+  --accent-fg: #ffffff;
+  --knob: #ffffff;
+
+  /* Accent — steel profundo */
+  --steel-300: #3a5993;
+  --steel-400: #5878b4;
+  --steel-500: #46689f;
+  --steel-600: #3a5688;
+  --steel-700: #2e456e;
+  --steel-tint: rgba(70, 104, 159, 0.12);
+  --steel-glow: rgba(70, 104, 159, 0.3);
+
+  /* Sand — creme de ênfase */
+  --sand-100: #f0eadd;
+  --sand-200: #e7dfcb;
+  --sand-300: #d6cbb2;
+  --sand-deep: #2e2a22;
+  --sand-tint: rgba(120, 96, 50, 0.1);
+
+  /* Status */
+  --ok: #2f9e6a;
+  --ok-tint: rgba(47, 158, 106, 0.12);
+  --err: #cf4536;
+  --err-tint: rgba(207, 69, 54, 0.12);
+  --warn: #b07d18;
+  --warn-tint: rgba(176, 125, 24, 0.12);
+
+  --glow-steel: radial-gradient(circle at 50% 0%, rgba(70, 104, 159, 0.1), transparent 70%);
+
+  /* Canais RGB */
+  --ink-rgb: 233 236 241;
+  --ink-deep-rgb: 223 227 234;
+  --slate-900-rgb: 255 255 255;
+  --slate-800-rgb: 240 243 247;
+  --slate-700-rgb: 231 235 241;
+  --slate-600-rgb: 215 220 229;
+  --steel-300-rgb: 58 89 147;
+  --steel-400-rgb: 88 120 180;
+  --steel-500-rgb: 70 104 159;
+  --steel-600-rgb: 58 86 136;
+  --steel-700-rgb: 46 69 110;
+  --sand-100-rgb: 240 234 221;
+  --sand-200-rgb: 231 223 203;
+  --sand-300-rgb: 214 203 178;
+  --sand-deep-rgb: 46 42 34;
+  --ok-rgb: 47 158 106;
+  --err-rgb: 207 69 54;
+  --warn-rgb: 176 125 24;
+  --text-strong-rgb: 20 23 29;
+  --text-rgb: 60 67 80;
+  --text-muted-rgb: 104 113 129;
+  --text-faint-rgb: 152 160 175;
+  --text-on-sand-rgb: 26 24 20;
+
+  /* Elevação clara — sombras frias e suaves */
+  --e1: 0 1px 2px rgba(20, 28, 48, 0.08);
+  --e2: 0 4px 14px rgba(20, 28, 48, 0.1);
+  --e3: 0 14px 40px rgba(20, 28, 48, 0.14);
+}
+
+/* ============================================================================
+   WHITE-LABEL — exemplo de marca [data-brand="ember"]
+   ----------------------------------------------------------------------------
+   Sobrescreve SOMENTE a camada de accent (steel-* + --accent-fg). O chrome
+   (superfícies, texto, linhas) permanece intacto. Compõe com qualquer tema:
+   por isso há um bloco para o escuro (base) e outro para o claro.
+
+   Para adicionar uma nova marca, copie estes dois blocos e ajuste só o accent.
+   ========================================================================== */
+
+/* ember sobre o tema escuro (base) — accent cobre quente */
+:root[data-brand='ember'] {
+  --steel-300: #e6ad79;
+  --steel-400: #d6945a;
+  --steel-500: #c47f45;
+  --steel-600: #a26635;
+  --steel-700: #7d4f29;
+  --steel-tint: rgba(196, 127, 69, 0.14);
+  --steel-glow: rgba(196, 127, 69, 0.3);
+  --accent-fg: #1c1610;
+
+  --steel-300-rgb: 230 173 121;
+  --steel-400-rgb: 214 148 90;
+  --steel-500-rgb: 196 127 69;
+  --steel-600-rgb: 162 102 53;
+  --steel-700-rgb: 125 79 41;
+
+  --glow-steel: radial-gradient(circle at 50% 0%, rgba(196, 127, 69, 0.12), transparent 70%);
+}
+
+/* ember sobre o tema claro — steel profundo cobre, foreground branco */
+:root[data-theme='light'][data-brand='ember'] {
+  --steel-300: #9a5a1f;
+  --steel-400: #c07f45;
+  --steel-500: #a8692e;
+  --steel-600: #8a5524;
+  --steel-700: #6e421b;
+  --steel-tint: rgba(168, 105, 46, 0.12);
+  --steel-glow: rgba(168, 105, 46, 0.3);
+  --accent-fg: #ffffff;
+
+  --steel-300-rgb: 154 90 31;
+  --steel-400-rgb: 192 127 69;
+  --steel-500-rgb: 168 105 46;
+  --steel-600-rgb: 138 85 36;
+  --steel-700-rgb: 110 66 27;
+
+  --glow-steel: radial-gradient(circle at 50% 0%, rgba(168, 105, 46, 0.1), transparent 70%);
+}
