@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { Building2, Mail, MoreHorizontal, Pause, Trash2, CalendarDays, ChevronDown, Check, Camera } from 'lucide-react'
+import { Building2, Mail, MoreHorizontal, Pause, Trash2, CalendarDays, ChevronDown, Check, Camera, Loader2 } from 'lucide-react'
 import {
   Breadcrumb,
   Button,
@@ -90,7 +90,7 @@ export function ClientDetailPage() {
   const navigate = useNavigate()
   const toast = useToast()
   const { role } = useSession()
-  const { getClient, setClientStatus, setClientAvatar } = useClients()
+  const { getClient, setClientStatus, setClientAvatar, removeClient, loading } = useClients()
   const { members } = useProfiles()
   const client = getClient(id)
   const [tab, setTab] = useState('visao')
@@ -115,6 +115,14 @@ export function ClientDetailPage() {
     }
     reader.onerror = () => toast.error('Falha ao ler o arquivo')
     reader.readAsDataURL(file)
+  }
+
+  if (loading && !client) {
+    return (
+      <div className="mx-auto grid max-w-3xl place-items-center px-6 py-24">
+        <Loader2 size={26} strokeWidth={1.5} className="animate-spin text-steel-300" aria-label="Carregando" />
+      </div>
+    )
   }
 
   if (!client) {
@@ -148,7 +156,7 @@ export function ClientDetailPage() {
               aria-label={client.avatar ? 'Trocar foto do cliente' : 'Enviar foto do cliente'}
               className="group relative block overflow-hidden rounded-xl focus-visible:outline-none focus-visible:shadow-focus"
             >
-              <ClientAvatar src={client.avatar} name={client.name} className="size-14 rounded-xl" iconSize={26} />
+              <ClientAvatar src={client.avatar ?? undefined} name={client.name} className="size-14 rounded-xl" iconSize={26} />
               <span className="absolute inset-0 grid place-items-center bg-ink/60 text-strong opacity-0 transition-opacity duration-fast group-hover:opacity-100">
                 <Camera size={18} strokeWidth={1.5} aria-hidden />
               </span>
@@ -182,6 +190,7 @@ export function ClientDetailPage() {
           <Button leftIcon={<CalendarDays size={18} strokeWidth={1.5} />} onClick={() => navigate('/app/agenda')}>
             Agendar
           </Button>
+          {role === 'admin' && (
           <DropdownMenu
             align="end"
             trigger={
@@ -190,12 +199,22 @@ export function ClientDetailPage() {
               </IconButton>
             }
           >
-            <MenuItem icon={<Pause size={16} strokeWidth={1.5} />} onClick={() => toast.info('Conta pausada')}>
+            <MenuItem
+              icon={<Pause size={16} strokeWidth={1.5} />}
+              onClick={() => { setClientStatus(client.id, 'pausado'); toast.info('Conta pausada', client.name) }}
+            >
               Pausar conta
             </MenuItem>
             <MenuSeparator />
-            <MenuItem icon={<Trash2 size={16} strokeWidth={1.5} />} destructive>Remover cliente</MenuItem>
+            <MenuItem
+              icon={<Trash2 size={16} strokeWidth={1.5} />}
+              destructive
+              onClick={() => { removeClient(client.id); toast.success('Cliente removido', client.name); navigate('/app/clientes') }}
+            >
+              Remover cliente
+            </MenuItem>
           </DropdownMenu>
+          )}
         </div>
       </div>
 

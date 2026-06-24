@@ -1,74 +1,131 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
-import { CLIENTS, type Client, type ClientStatus } from './data'
+import { supabase } from '@/lib/supabase'
+import { useSession } from '@/lib/session'
+import { type ClientStatus } from './data'
 
 /* ----------------------------------------------------------------------------
-   Store de clientes
+   Store de clientes — Supabase (tabela public.clients)
    ----------------------------------------------------------------------------
-   Mantém os clientes em estado para que o admin possa alterar o status. As
-   mudanças de status persistem em localStorage (em produção iriam ao back-end).
-   Guardamos só os overrides de status por id e mesclamos sobre os dados base.
+   Compartilhado pelo time. Admin cria/edita/exclui; todos veem. Avatar é um
+   data URL guardado na coluna `avatar` (text).
 ---------------------------------------------------------------------------- */
 
-const STATUS_KEY = 'upskl-client-status'
-const AVATAR_KEY = 'upskl-client-avatar'
+export interface Client {
+  id: string
+  name: string
+  segment: string | null
+  phase: string | null
+  status: ClientStatus
+  contact: string | null
+  since: string | null
+  progress: number
+  avatar: string | null
+}
 
-function read<T>(key: string): Record<string, T> {
-  if (typeof window === 'undefined') return {}
-  try {
-    return JSON.parse(localStorage.getItem(key) || '{}')
-  } catch {
-    return {}
-  }
+export type ClientInput = {
+  name: string
+  segment?: string
+  phase?: string
+  status?: ClientStatus
+  contact?: string
+  since?: string
+  progress?: number
 }
 
 interface ClientsCtx {
   clients: Client[]
+  loading: boolean
   getClient: (id?: string) => Client | undefined
-  setClientStatus: (id: string, status: ClientStatus) => void
-  setClientAvatar: (id: string, dataUrl: string) => void
+  addClient: (input: ClientInput) => Promise<{ error: string | null }>
+  updateClient: (id: string, patch: Partial<ClientInput> & { avatar?: string }) => Promise<{ error: string | null }>
+  removeClient: (id: string) => Promise<void>
+  setClientStatus: (id: string, status: ClientStatus) => Promise<void>
+  setClientAvatar: (id: string, dataUrl: string) => Promise<void>
 }
 
 const Context = createContext<ClientsCtx | null>(null)
 
 export function ClientsProvider({ children }: { children: React.ReactNode }) {
-  const [statuses, setStatuses] = useState<Record<string, ClientStatus>>(() => read(STATUS_KEY))
-  const [avatars, setAvatars] = useState<Record<string, string>>(() => read(AVATAR_KEY))
+  const { status } = useSession()
+  const [clients, setClients] = useState<Client[]>([])
+  const [loading, setLoading] = useState(true)
+
+  const fetchClients = useCallback(async () => {
+    const { data, error } = await supabase
+      .from('clients')
+      .select('id, name, segment, phase, status, contact, since, progress, avatar')
+      .order('name')
+    if (!error && data) setClients(data as Client[])
+    setLoading(false)
+  }, [])
 
   useEffect(() => {
-    localStorage.setItem(STATUS_KEY, JSON.stringify(statuses))
-  }, [statuses])
-  useEffect(() => {
-    try {
-      localStorage.setItem(AVATAR_KEY, JSON.stringify(avatars))
-    } catch {
-      // localStorage cheio (imagem grande) — ignora a persistência.
+    if (status === 'authed') {
+      setLoading(true)
+      fetchClients()
+    } else if (status === 'anon') {
+      setClients([])
+      setLoading(false)
     }
-  }, [avatars])
-
-  const clients = useMemo(
-    () =>
-      CLIENTS.map((c) => ({
-        ...c,
-        status: statuses[c.id] ?? c.status,
-        avatar: avatars[c.id] ?? c.avatar,
-      })),
-    [statuses, avatars],
-  )
+  }, [status, fetchClients])
 
   const getClient = useCallback((id?: string) => clients.find((c) => c.id === id), [clients])
 
-  const setClientStatus = useCallback(
-    (id: string, status: ClientStatus) => setStatuses((o) => ({ ...o, [id]: status })),
-    [],
+  const addClient = useCallback(
+    async (input: ClientInput) => {
+      const { error } = await supabase.from('clients').insert({
+        name: input.name,
+        segment: input.segment ?? null,
+        phase: input.phase ?? null,
+        status: input.status ?? 'onboarding',
+        contact: input.contact ?? null,
+        since: input.since ?? null,
+        progress: input.progress ?? 0,
+      })
+      if (error) return { error: error.message }
+      await fetchClients()
+      return { error: null }
+    },
+    [fetchClients],
   )
+
+  const updateClient = useCallback(
+    async (id: string, patch: Partial<ClientInput> & { avatar?: string }) => {
+      const { error } = await supabase.from('clients').update(patch).eq('id', id)
+      if (error) return { error: error.message }
+      await fetchClients()
+      return { error: null }
+    },
+    [fetchClients],
+  )
+
+  const removeClient = useCallback(
+    async (id: string) => {
+      const { error } = await supabase.from('clients').delete().eq('id', id)
+      if (!error) await fetchClients()
+    },
+    [fetchClients],
+  )
+
+  const setClientStatus = useCallback(
+    async (id: string, s: ClientStatus) => {
+      await supabase.from('clients').update({ status: s }).eq('id', id)
+      await fetchClients()
+    },
+    [fetchClients],
+  )
+
   const setClientAvatar = useCallback(
-    (id: string, dataUrl: string) => setAvatars((o) => ({ ...o, [id]: dataUrl })),
-    [],
+    async (id: string, dataUrl: string) => {
+      await supabase.from('clients').update({ avatar: dataUrl }).eq('id', id)
+      await fetchClients()
+    },
+    [fetchClients],
   )
 
   const value = useMemo<ClientsCtx>(
-    () => ({ clients, getClient, setClientStatus, setClientAvatar }),
-    [clients, getClient, setClientStatus, setClientAvatar],
+    () => ({ clients, loading, getClient, addClient, updateClient, removeClient, setClientStatus, setClientAvatar }),
+    [clients, loading, getClient, addClient, updateClient, removeClient, setClientStatus, setClientAvatar],
   )
 
   return <Context.Provider value={value}>{children}</Context.Provider>

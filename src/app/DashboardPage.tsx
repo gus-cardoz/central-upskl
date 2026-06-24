@@ -279,7 +279,7 @@ function AdminDashboard() {
                       className="flex w-full flex-col gap-2 rounded-md px-2 py-2 text-left transition-colors hover:bg-slate-800 focus-visible:outline-none focus-visible:shadow-focus"
                     >
                       <div className="flex items-center gap-3">
-                        <ClientAvatar src={c.avatar} name={c.name} className="size-8 rounded-md" iconSize={16} />
+                        <ClientAvatar src={c.avatar ?? undefined} name={c.name} className="size-8 rounded-md" iconSize={16} />
                         <div className="min-w-0 flex-1">
                           <div className="truncate text-body-s font-medium text-strong">{c.name}</div>
                           <div className="truncate font-mono text-[11px] text-faint">{c.phase}</div>
@@ -303,13 +303,10 @@ function AdminDashboard() {
 /* COLABORADOR — visão do dia a dia                                            */
 /* =========================================================================== */
 
-/** Clientes que aparecem no trabalho do dia (derivados das tarefas). */
-const MY_CLIENT_IDS = ['CLI-06']
-
 function CollaboratorDashboard() {
   const navigate = useNavigate()
   const { user } = useSession()
-  const { getClient } = useClients()
+  const { clients } = useClients()
   const { tasks: allTasks, moveTask } = useTasks()
   const firstName = user.name.split(' ')[0]
   const { greeting, dateLabel } = greetingFor()
@@ -325,7 +322,7 @@ function CollaboratorDashboard() {
 
   const { events } = useAgenda()
   const todayAgenda = events.filter((e) => e.date === todayIso() && e.people.includes(user.id))
-  const myClients = MY_CLIENT_IDS.map(getClient).filter(Boolean)
+  const myClients = clients
 
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-4 px-6 py-8">
@@ -460,7 +457,7 @@ function CollaboratorDashboard() {
                       onClick={() => navigate(`/app/clientes/${c!.id}`)}
                       className="flex w-full items-center gap-3 rounded-md px-2 py-2 text-left transition-colors hover:bg-slate-800 focus-visible:outline-none focus-visible:shadow-focus"
                     >
-                      <ClientAvatar src={c!.avatar} name={c!.name} className="size-8 rounded-md" iconSize={16} />
+                      <ClientAvatar src={c!.avatar ?? undefined} name={c!.name} className="size-8 rounded-md" iconSize={16} />
                       <div className="min-w-0 flex-1">
                         <div className="truncate text-body-s font-medium text-strong">{c!.name}</div>
                         <div className="truncate font-mono text-[11px] text-faint">{c!.phase}</div>
