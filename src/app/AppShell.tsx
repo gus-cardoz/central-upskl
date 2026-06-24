@@ -12,8 +12,6 @@ import {
   LogOut,
   UserCog,
   ChevronDown,
-  Check,
-  ShieldCheck,
 } from 'lucide-react'
 import {
   Sidebar,
@@ -31,7 +29,7 @@ import {
   MenuLabel,
   MenuSeparator,
 } from '@/components/ui'
-import { useSession, ROLE_OPTIONS, type Role } from '@/lib/session'
+import { useSession } from '@/lib/session'
 import { useClients } from './clients'
 
 interface NavLink {
@@ -64,50 +62,18 @@ const NAV: { group: string; items: NavLink[]; adminOnly?: boolean }[] = [
   },
 ]
 
-/** Seletor de perfil "Ver como" — pré-visualiza admin vs colaborador. */
-function RoleSwitcher() {
-  const { role, setRole } = useSession()
-  const current = ROLE_OPTIONS.find((r) => r.value === role)
-  return (
-    <DropdownMenu
-      align="end"
-      trigger={
-        <button className="flex items-center gap-2 rounded-md border border-strong px-2.5 py-1.5 text-body-s text-muted transition-colors hover:bg-slate-800 hover:text-strong focus-visible:outline-none focus-visible:shadow-focus">
-          <ShieldCheck size={16} strokeWidth={1.5} className="text-steel-300" aria-hidden />
-          <span className="hidden sm:inline">Ver como</span>
-          <span className="font-medium text-strong">{current?.label}</span>
-          <ChevronDown size={15} strokeWidth={1.5} aria-hidden />
-        </button>
-      }
-    >
-      <MenuLabel>Tipo de acesso</MenuLabel>
-      {ROLE_OPTIONS.map((r) => (
-        <MenuItem
-          key={r.value}
-          onClick={() => setRole(r.value as Role)}
-          icon={
-            <span className="grid size-4 place-items-center">
-              {role === r.value && <Check size={14} strokeWidth={2} aria-hidden />}
-            </span>
-          }
-        >
-          <span className="flex flex-col">
-            <span>{r.label}</span>
-            <span className="font-mono text-[11px] text-faint">{r.hint}</span>
-          </span>
-        </MenuItem>
-      ))}
-    </DropdownMenu>
-  )
-}
-
 export function AppShell() {
   const navigate = useNavigate()
   const { pathname } = useLocation()
-  const { role, user } = useSession()
+  const { role, user, signOut } = useSession()
   const { clients } = useClients()
   const [search, setSearch] = useState('')
   const isAdmin = role === 'admin'
+
+  const handleSignOut = async () => {
+    await signOut()
+    navigate('/login', { replace: true })
+  }
 
   const isActive = (to: string) => (to === '/app' ? pathname === '/app' : pathname.startsWith(to))
 
@@ -151,7 +117,6 @@ export function AppShell() {
         }
         trailing={
           <>
-            <RoleSwitcher />
             <BrandSwitcher />
             <ThemeToggle />
             <IconButton aria-label="Notificações" className="relative">
@@ -167,11 +132,16 @@ export function AppShell() {
                 </button>
               }
             >
-              <MenuLabel>{user.email}</MenuLabel>
+              <MenuLabel>
+                <span className="flex flex-col">
+                  <span className="text-strong">{user.name}</span>
+                  <span className="font-mono text-[11px] text-faint">{user.email} · {user.roleLabel}</span>
+                </span>
+              </MenuLabel>
               <MenuItem icon={<UserCog size={16} strokeWidth={1.5} />}>Conta</MenuItem>
               <MenuItem icon={<Settings2 size={16} strokeWidth={1.5} />}>Preferências</MenuItem>
               <MenuSeparator />
-              <MenuItem icon={<LogOut size={16} strokeWidth={1.5} />} destructive>
+              <MenuItem icon={<LogOut size={16} strokeWidth={1.5} />} destructive onClick={handleSignOut}>
                 Sair
               </MenuItem>
             </DropdownMenu>

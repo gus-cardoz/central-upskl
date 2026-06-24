@@ -1,64 +1,99 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
+import type { Session } from '@supabase/supabase-js'
+import { supabase } from './supabase'
 
 /* ----------------------------------------------------------------------------
-   Sessão / perfil de acesso
+   Sessão / autenticação (Supabase Auth)
    ----------------------------------------------------------------------------
-   Define o tipo de acesso do usuário logado. Dois perfis:
-   - admin: gestão completa — pode adicionar/excluir seções da plataforma.
-   - colaborador: visão do dia a dia — tarefas, reuniões e acessos úteis.
+   O usuário loga com e-mail e senha (contas criadas pelo admin — não há
+   cadastro aberto). O papel de acesso e o nome ficam no user_metadata do
+   usuário no Supabase:
 
-   Há um seletor "Ver como" no topo para pré-visualizar cada perfil. O valor
-   persiste em localStorage. Em produção isso viria do back-end de auth.
+     { role: 'admin' | 'colaborador', name: 'Fulano', member_id?: 'USR-1047' }
+
+   - role:      define o que a pessoa enxerga (admin = gestão completa).
+   - name:      exibido na interface.
+   - member_id: opcional — liga o login a um membro do time (USERS em data.ts),
+                usado para "Minhas tarefas". Sem ele, o id é o uuid do Supabase.
 ---------------------------------------------------------------------------- */
 
 export type Role = 'admin' | 'colaborador'
 
 export interface Profile {
-  /** Id do usuário (mapeia para USERS em data.ts). */
+  /** Id usado no app — member_id (se houver) ou o uuid do Supabase. */
   id: string
   name: string
   email: string
   roleLabel: string
 }
 
-export const PROFILES: Record<Role, Profile> = {
-  admin: { id: 'USR-1042', name: 'Ana Lima', email: 'ana.lima@upskl.io', roleLabel: 'Admin' },
-  colaborador: { id: 'USR-1047', name: 'Felipe Rocha', email: 'felipe.rocha@upskl.io', roleLabel: 'Colaborador' },
+/** Estado da sessão para a tela de carregamento / guarda de rota. */
+export type AuthStatus = 'loading' | 'authed' | 'anon'
+
+const EMPTY_PROFILE: Profile = { id: '', name: '', email: '', roleLabel: '' }
+
+function profileFromSession(session: Session | null): { profile: Profile; role: Role } {
+  const u = session?.user
+  if (!u) return { profile: EMPTY_PROFILE, role: 'colaborador' }
+  const meta = (u.user_metadata ?? {}) as { role?: Role; name?: string; member_id?: string }
+  const role: Role = meta.role === 'admin' ? 'admin' : 'colaborador'
+  const email = u.email ?? ''
+  return {
+    profile: {
+      id: meta.member_id || u.id,
+      name: meta.name || email.split('@')[0] || 'Usuário',
+      email,
+      roleLabel: role === 'admin' ? 'Admin' : 'Colaborador',
+    },
+    role,
+  }
 }
 
-export const ROLE_OPTIONS: { value: Role; label: string; hint: string }[] = [
-  { value: 'admin', label: 'Admin', hint: 'Gestão completa da plataforma' },
-  { value: 'colaborador', label: 'Colaborador', hint: 'Visão do dia a dia' },
-]
-
-const ROLE_KEY = 'upskl-role'
-
 interface SessionCtx {
+  status: AuthStatus
   role: Role
   user: Profile
-  setRole: (r: Role) => void
+  signIn: (email: string, password: string) => Promise<{ error: string | null }>
+  signOut: () => Promise<void>
 }
 
 const Context = createContext<SessionCtx | null>(null)
 
-function readRole(): Role {
-  if (typeof window === 'undefined') return 'admin'
-  const saved = localStorage.getItem(ROLE_KEY)
-  return saved === 'colaborador' || saved === 'admin' ? saved : 'admin'
-}
-
 export function SessionProvider({ children }: { children: React.ReactNode }) {
-  const [role, setRoleState] = useState<Role>(readRole)
+  const [session, setSession] = useState<Session | null>(null)
+  const [status, setStatus] = useState<AuthStatus>('loading')
 
   useEffect(() => {
-    localStorage.setItem(ROLE_KEY, role)
-  }, [role])
+    let active = true
+    supabase.auth.getSession().then(({ data }) => {
+      if (!active) return
+      setSession(data.session)
+      setStatus(data.session ? 'authed' : 'anon')
+    })
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, newSession) => {
+      setSession(newSession)
+      setStatus(newSession ? 'authed' : 'anon')
+    })
+    return () => {
+      active = false
+      sub.subscription.unsubscribe()
+    }
+  }, [])
 
-  const setRole = useCallback((r: Role) => setRoleState(r), [])
+  const signIn = useCallback(async (email: string, password: string) => {
+    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    return { error: error ? error.message : null }
+  }, [])
+
+  const signOut = useCallback(async () => {
+    await supabase.auth.signOut()
+  }, [])
+
+  const { profile, role } = useMemo(() => profileFromSession(session), [session])
 
   const value = useMemo<SessionCtx>(
-    () => ({ role, user: PROFILES[role], setRole }),
-    [role, setRole],
+    () => ({ status, role, user: profile, signIn, signOut }),
+    [status, role, profile, signIn, signOut],
   )
 
   return <Context.Provider value={value}>{children}</Context.Provider>

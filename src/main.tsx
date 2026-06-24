@@ -13,6 +13,8 @@ import './styles/globals.css'
 import { ToastProvider } from './components/ui'
 import { ThemeProvider } from './lib/theme'
 import { SessionProvider } from './lib/session'
+import { RequireAuth } from './lib/RequireAuth'
+import { LoginPage } from './pages/Login'
 import { ClientsProvider } from './app/clients'
 import { EditorialProvider } from './app/editorial'
 import { ContentProvider } from './app/content'
@@ -29,11 +31,16 @@ import { TasksPage } from './app/TasksPage'
 import { PlaceholderPage } from './app/PlaceholderPage'
 
 const router = createBrowserRouter([
-  { path: '/', element: <Navigate to="/styleguide" replace /> },
+  { path: '/', element: <Navigate to="/app" replace /> },
+  { path: '/login', element: <LoginPage /> },
   { path: '/styleguide', element: <StyleguidePage /> },
   {
     path: '/app',
-    element: <AppShell />,
+    element: (
+      <RequireAuth>
+        <AppShell />
+      </RequireAuth>
+    ),
     children: [
       { index: true, element: <DashboardPage /> },
       { path: 'usuarios', element: <UsersPage /> },
