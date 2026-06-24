@@ -46,7 +46,7 @@ const NAV: { group: string; items: NavLink[]; adminOnly?: boolean }[] = [
     group: 'Operação',
     items: [
       { to: '/app', label: 'Visão geral', icon: <LayoutGrid size={18} strokeWidth={1.5} /> },
-      { to: '/app/usuarios', label: 'Usuários', icon: <Users size={18} strokeWidth={1.5} />, badge: '10', adminOnly: true },
+      { to: '/app/usuarios', label: 'Usuários', icon: <Users size={18} strokeWidth={1.5} />, adminOnly: true },
       { to: '/app/clientes', label: 'Clientes', icon: <Building2 size={18} strokeWidth={1.5} />, badge: '6' },
       { to: '/app/tarefas', label: 'Tarefas', icon: <ListChecks size={18} strokeWidth={1.5} /> },
       { to: '/app/agenda', label: 'Agenda', icon: <CalendarDays size={18} strokeWidth={1.5} />, badge: '4' },

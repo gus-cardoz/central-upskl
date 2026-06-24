@@ -1,32 +1,17 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
+import { supabase } from '@/lib/supabase'
 import { useSession } from '@/lib/session'
-import { getTasksSeed, TASK_STATUS_META, type Task, type TaskStatus } from './data'
+import { TASK_STATUS_META, type Task, type TaskStatus } from './data'
 
 /* ----------------------------------------------------------------------------
-   Store de tarefas (gestão estilo ClickUp/Asana)
+   Store de tarefas — Supabase (tabelas public.tasks + public.task_events)
    ----------------------------------------------------------------------------
-   Lista única de tarefas do time (não é por cliente). Persiste tudo em
-   localStorage e hidrata do seed na primeira carga. Cada mutação registra uma
-   entrada no histórico da tarefa, atribuída ao usuário logado (via sessão).
+   Dados compartilhados por toda a equipe. Cada mutação grava um evento no
+   histórico, atribuído ao usuário logado. Após cada escrita, recarregamos a
+   lista (simples e sem risco de divergência, dado o volume).
 ---------------------------------------------------------------------------- */
 
-const KEY = 'upskl-tasks-v1'
-
-function readTasks(): Task[] {
-  if (typeof window === 'undefined') return getTasksSeed()
-  try {
-    const raw = localStorage.getItem(KEY)
-    return raw ? (JSON.parse(raw) as Task[]) : getTasksSeed()
-  } catch {
-    return getTasksSeed()
-  }
-}
-
-function uid(prefix: string) {
-  return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`
-}
-
-/** Entrada de criação de tarefa (sem campos derivados). */
+/** Entrada de criação de tarefa. */
 export type TaskInput = Pick<Task, 'title'> &
   Partial<Pick<Task, 'description' | 'status' | 'priority' | 'assignees' | 'due' | 'tag' | 'clientId'>>
 
@@ -35,98 +20,158 @@ export type TaskPatch = Partial<
   Pick<Task, 'title' | 'description' | 'priority' | 'assignees' | 'due' | 'tag' | 'clientId'>
 >
 
+interface TaskRow {
+  id: string
+  title: string
+  description: string | null
+  status: TaskStatus
+  priority: Task['priority']
+  assignees: string[] | null
+  due: string | null
+  tag: Task['tag'] | null
+  client_id: string | null
+  created_at: string
+  completed_at: string | null
+  task_events: { id: string; at: string; who: string; text: string }[] | null
+}
+
+function mapRow(r: TaskRow): Task {
+  return {
+    id: r.id,
+    title: r.title,
+    description: r.description ?? undefined,
+    status: r.status,
+    priority: r.priority,
+    assignees: r.assignees ?? [],
+    due: r.due ?? undefined,
+    tag: r.tag ?? undefined,
+    clientId: r.client_id ?? undefined,
+    createdAt: r.created_at,
+    completedAt: r.completed_at ?? undefined,
+    history: (r.task_events ?? [])
+      .map((e) => ({ id: e.id, at: e.at, who: e.who, text: e.text }))
+      .sort((a, b) => a.at.localeCompare(b.at)),
+  }
+}
+
 interface TasksCtx {
   tasks: Task[]
-  addTask: (input: TaskInput) => string
-  editTask: (id: string, patch: TaskPatch) => void
-  moveTask: (id: string, status: TaskStatus) => void
-  removeTask: (id: string) => void
+  loading: boolean
+  addTask: (input: TaskInput) => Promise<void>
+  editTask: (id: string, patch: TaskPatch) => Promise<void>
+  moveTask: (id: string, status: TaskStatus) => Promise<void>
+  removeTask: (id: string) => Promise<void>
 }
 
 const Context = createContext<TasksCtx | null>(null)
 
 export function TasksProvider({ children }: { children: React.ReactNode }) {
-  const { user } = useSession()
-  const [tasks, setTasks] = useState<Task[]>(() => readTasks())
+  const { status, user } = useSession()
+  const [tasks, setTasks] = useState<Task[]>([])
+  const [loading, setLoading] = useState(true)
+
+  const fetchTasks = useCallback(async () => {
+    const { data, error } = await supabase
+      .from('tasks')
+      .select('*, task_events(*)')
+      .order('created_at', { ascending: false })
+    if (!error && data) setTasks((data as TaskRow[]).map(mapRow))
+    setLoading(false)
+  }, [])
 
   useEffect(() => {
-    try {
-      localStorage.setItem(KEY, JSON.stringify(tasks))
-    } catch {
-      // localStorage cheio — ignora a persistência.
+    if (status === 'authed') {
+      setLoading(true)
+      fetchTasks()
+    } else if (status === 'anon') {
+      setTasks([])
+      setLoading(false)
     }
-  }, [tasks])
+  }, [status, fetchTasks])
 
-  const event = useCallback(
-    (text: string) => ({ id: uid('h'), at: new Date().toISOString(), who: user.name, text }),
+  /** Registra um evento no histórico da tarefa. */
+  const logEvent = useCallback(
+    async (taskId: string, text: string) => {
+      await supabase.from('task_events').insert({ task_id: taskId, who: user.name, text })
+    },
     [user.name],
   )
 
   const addTask = useCallback(
-    (input: TaskInput) => {
-      const id = uid('tk')
-      const now = new Date().toISOString()
-      const status = input.status ?? 'a-fazer'
-      const task: Task = {
-        id,
-        title: input.title,
-        description: input.description,
-        status,
-        priority: input.priority ?? 'media',
-        assignees: input.assignees ?? [],
-        due: input.due,
-        tag: input.tag,
-        clientId: input.clientId,
-        createdAt: now,
-        completedAt: status === 'concluida' ? now : undefined,
-        history: [{ id: uid('h'), at: now, who: user.name, text: 'criou a tarefa' }],
-      }
-      setTasks((ts) => [task, ...ts])
-      return id
+    async (input: TaskInput) => {
+      const stat = input.status ?? 'a-fazer'
+      const { data, error } = await supabase
+        .from('tasks')
+        .insert({
+          title: input.title,
+          description: input.description ?? null,
+          status: stat,
+          priority: input.priority ?? 'media',
+          assignees: input.assignees ?? [],
+          due: input.due ?? null,
+          tag: input.tag ?? null,
+          client_id: input.clientId ?? null,
+          completed_at: stat === 'concluida' ? new Date().toISOString() : null,
+        })
+        .select('id')
+        .single()
+      if (error || !data) return
+      await logEvent(data.id, 'criou a tarefa')
+      await fetchTasks()
     },
-    [user.name],
+    [logEvent, fetchTasks],
   )
 
   const editTask = useCallback(
-    (id: string, patch: TaskPatch) => {
-      setTasks((ts) =>
-        ts.map((t) => (t.id === id ? { ...t, ...patch, history: [...t.history, event('editou a tarefa')] } : t)),
-      )
+    async (id: string, patch: TaskPatch) => {
+      const row: Record<string, unknown> = {}
+      if (patch.title !== undefined) row.title = patch.title
+      if (patch.description !== undefined) row.description = patch.description ?? null
+      if (patch.priority !== undefined) row.priority = patch.priority
+      if (patch.assignees !== undefined) row.assignees = patch.assignees
+      if (patch.due !== undefined) row.due = patch.due ?? null
+      if (patch.tag !== undefined) row.tag = patch.tag ?? null
+      if (patch.clientId !== undefined) row.client_id = patch.clientId ?? null
+      const { error } = await supabase.from('tasks').update(row).eq('id', id)
+      if (error) return
+      await logEvent(id, 'editou a tarefa')
+      await fetchTasks()
     },
-    [event],
+    [logEvent, fetchTasks],
   )
 
   const moveTask = useCallback(
-    (id: string, status: TaskStatus) => {
-      setTasks((ts) =>
-        ts.map((t) => {
-          if (t.id !== id || t.status === status) return t
-          const now = new Date().toISOString()
-          const text =
-            status === 'concluida'
-              ? 'concluiu a tarefa'
-              : t.status === 'concluida'
-                ? `reabriu em ${TASK_STATUS_META[status].label}`
-                : `moveu para ${TASK_STATUS_META[status].label}`
-          return {
-            ...t,
-            status,
-            completedAt: status === 'concluida' ? now : undefined,
-            history: [...t.history, { id: uid('h'), at: now, who: user.name, text }],
-          }
-        }),
-      )
+    async (id: string, status: TaskStatus) => {
+      const current = tasks.find((t) => t.id === id)
+      if (!current || current.status === status) return
+      const text =
+        status === 'concluida'
+          ? 'concluiu a tarefa'
+          : current.status === 'concluida'
+            ? `reabriu em ${TASK_STATUS_META[status].label}`
+            : `moveu para ${TASK_STATUS_META[status].label}`
+      const { error } = await supabase
+        .from('tasks')
+        .update({ status, completed_at: status === 'concluida' ? new Date().toISOString() : null })
+        .eq('id', id)
+      if (error) return
+      await logEvent(id, text)
+      await fetchTasks()
     },
-    [user.name],
+    [tasks, logEvent, fetchTasks],
   )
 
-  const removeTask = useCallback((id: string) => {
-    setTasks((ts) => ts.filter((t) => t.id !== id))
-  }, [])
+  const removeTask = useCallback(
+    async (id: string) => {
+      const { error } = await supabase.from('tasks').delete().eq('id', id)
+      if (!error) await fetchTasks()
+    },
+    [fetchTasks],
+  )
 
   const value = useMemo<TasksCtx>(
-    () => ({ tasks, addTask, editTask, moveTask, removeTask }),
-    [tasks, addTask, editTask, moveTask, removeTask],
+    () => ({ tasks, loading, addTask, editTask, moveTask, removeTask }),
+    [tasks, loading, addTask, editTask, moveTask, removeTask],
   )
 
   return <Context.Provider value={value}>{children}</Context.Provider>

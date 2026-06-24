@@ -21,9 +21,9 @@ import {
 import { useSession } from '@/lib/session'
 import { useClients } from './clients'
 import { useTasks } from './tasks'
+import { useProfiles } from './profiles'
 import { ClientAvatar } from './ClientAvatar'
 import {
-  USERS,
   CLIENT_STATUS_META,
   TEAM_AGENDA,
   TODAY,
@@ -78,7 +78,8 @@ function WelcomeBanner({
   agendaCount: number
 }) {
   const { greeting, dateLabel } = greetingFor()
-  const online = USERS.filter((u) => u.status === 'ativo')
+  const { members } = useProfiles()
+  const active = members.filter((u) => u.status === 'ativo')
 
   return (
     <section className="relative overflow-hidden rounded-2xl border border-line bg-slate-900 p-6 sm:p-8">
@@ -102,17 +103,19 @@ function WelcomeBanner({
           </div>
         </div>
 
-        <div className="flex shrink-0 items-center gap-4 rounded-xl border border-line bg-ink-deep/40 px-5 py-4">
-          <AvatarGroup max={4}>
-            {online.map((u) => (
-              <Avatar key={u.id} size="md" name={u.name} status="online" />
-            ))}
-          </AvatarGroup>
-          <div className="leading-tight">
-            <div className="font-display text-h2 font-semibold tabular-nums text-strong">{online.length}</div>
-            <div className="font-mono text-mono-label uppercase text-faint">online agora</div>
+        {active.length > 0 && (
+          <div className="flex shrink-0 items-center gap-4 rounded-xl border border-line bg-ink-deep/40 px-5 py-4">
+            <AvatarGroup max={4}>
+              {active.map((u) => (
+                <Avatar key={u.id} size="md" name={u.name} status="online" />
+              ))}
+            </AvatarGroup>
+            <div className="leading-tight">
+              <div className="font-display text-h2 font-semibold tabular-nums text-strong">{active.length}</div>
+              <div className="font-mono text-mono-label uppercase text-faint">no time</div>
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </section>
   )
@@ -122,9 +125,10 @@ function AdminDashboard() {
   const navigate = useNavigate()
   const { user } = useSession()
   const { clients } = useClients()
+  const { members: team } = useProfiles()
   const firstName = user.name.split(' ')[0]
   const clientesAtivos = clients.filter((c) => c.status === 'ativo').length
-  const timeOnline = USERS.filter((u) => u.status === 'ativo').length
+  const ativos = team.filter((u) => u.status === 'ativo').length
   const todayAgenda = TEAM_AGENDA.filter((e) => e.day === TODAY)
 
   return (
@@ -137,15 +141,16 @@ function AdminDashboard() {
       />
 
       {/* Métricas */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <button onClick={() => navigate('/app/clientes')} className="text-left focus-visible:outline-none">
-          <StatCard label="Clientes ativos" value={String(clientesAtivos)} delta={{ value: '+1 esta semana', direction: 'up' }} className="h-full transition-colors hover:border-strong" />
+          <StatCard label="Clientes ativos" value={String(clientesAtivos)} className="h-full transition-colors hover:border-strong" />
         </button>
-        <StatCard label="Time online" value={String(timeOnline)} delta={{ value: `de ${USERS.length}`, direction: 'neutral' }} />
+        <button onClick={() => navigate('/app/usuarios')} className="text-left focus-visible:outline-none">
+          <StatCard label="Time" value={String(ativos)} delta={{ value: `de ${team.length}`, direction: 'neutral' }} className="h-full transition-colors hover:border-strong" />
+        </button>
         <button onClick={() => navigate('/app/agenda')} className="text-left focus-visible:outline-none">
           <StatCard label="Compromissos hoje" value={String(todayAgenda.length)} active className="h-full transition-colors hover:border-strong" />
         </button>
-        <StatCard label="Sessões · 7d" value="1.024" delta={{ value: '+12%', direction: 'up' }} />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-3">
@@ -205,16 +210,21 @@ function AdminDashboard() {
               </button>
             </CardHeader>
             <ul className="flex flex-col gap-1">
-              {USERS.slice(0, 6).map((u) => (
+              {team.length === 0 && (
+                <li className="px-2 py-3 text-body-s text-faint">Nenhum usuário cadastrado ainda.</li>
+              )}
+              {team.slice(0, 6).map((u) => (
                 <li key={u.id}>
                   <button
-                    onClick={() => navigate(`/app/usuarios/${u.id}`)}
+                    onClick={() => navigate('/app/usuarios')}
                     className="flex w-full items-center gap-3 rounded-md px-2 py-2 text-left transition-colors hover:bg-slate-800 focus-visible:outline-none focus-visible:shadow-focus"
                   >
                     <Avatar size="sm" name={u.name} status={AV_STATUS[u.status]} />
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-body-s font-medium text-strong">{u.name}</div>
-                      <div className="truncate font-mono text-[11px] text-faint">{u.role} · {u.team}</div>
+                      <div className="truncate font-mono text-[11px] text-faint">
+                        {u.role === 'admin' ? 'Admin' : 'Colaborador'}{u.team ? ` · ${u.team}` : ''}
+                      </div>
                     </div>
                     <span className="shrink-0 font-mono text-[11px] uppercase text-muted">
                       {PRESENCE_LABEL[u.status]}

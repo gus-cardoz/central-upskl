@@ -19,11 +19,11 @@ import { ClientsProvider } from './app/clients'
 import { EditorialProvider } from './app/editorial'
 import { ContentProvider } from './app/content'
 import { TasksProvider } from './app/tasks'
+import { ProfilesProvider } from './app/profiles'
 import { StyleguidePage } from './pages/Styleguide'
 import { AppShell } from './app/AppShell'
 import { DashboardPage } from './app/DashboardPage'
 import { UsersPage } from './app/UsersPage'
-import { UserDetailPage } from './app/UserDetailPage'
 import { AgendaPage } from './app/AgendaPage'
 import { ClientsPage } from './app/ClientsPage'
 import { ClientDetailPage } from './app/ClientDetailPage'
@@ -44,7 +44,6 @@ const router = createBrowserRouter([
     children: [
       { index: true, element: <DashboardPage /> },
       { path: 'usuarios', element: <UsersPage /> },
-      { path: 'usuarios/:id', element: <UserDetailPage /> },
       { path: 'agenda', element: <AgendaPage /> },
       { path: 'tarefas', element: <TasksPage /> },
       { path: 'clientes', element: <ClientsPage /> },
@@ -62,11 +61,13 @@ createRoot(document.getElementById('root')!).render(
         <ClientsProvider>
           <EditorialProvider>
             <ContentProvider>
-              <TasksProvider>
-                <ToastProvider>
-                  <RouterProvider router={router} />
-                </ToastProvider>
-              </TasksProvider>
+              <ProfilesProvider>
+                <TasksProvider>
+                  <ToastProvider>
+                    <RouterProvider router={router} />
+                  </ToastProvider>
+                </TasksProvider>
+              </ProfilesProvider>
             </ContentProvider>
           </EditorialProvider>
         </ClientsProvider>

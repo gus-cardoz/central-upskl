@@ -13,6 +13,7 @@ import {
   History,
   Building2,
   ListChecks,
+  Loader2,
 } from 'lucide-react'
 import {
   Button,
@@ -39,8 +40,8 @@ import {
 } from '@/components/ui'
 import { useSession } from '@/lib/session'
 import { useTasks, type TaskInput } from './tasks'
+import { useProfiles } from './profiles'
 import {
-  USERS,
   TASK_STATUS_ORDER,
   TASK_STATUS_META,
   TASK_PRIORITY_ORDER,
@@ -56,8 +57,6 @@ import {
 /* ----------------------------------------------------------------- helpers */
 
 const TAGS: TaskTag[] = ['Cliente', 'Suporte', 'Conteúdo', 'Interno']
-
-const userById = (id: string) => USERS.find((u) => u.id === id)
 
 const shortDate = new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: 'short' })
 const fullDateTime = new Intl.DateTimeFormat('pt-BR', {
@@ -114,14 +113,15 @@ function DueChip({ task }: { task: Task }) {
 }
 
 function Assignees({ ids, size = 'sm' }: { ids: string[]; size?: 'sm' | 'xs' }) {
+  const { getMember } = useProfiles()
   if (ids.length === 0) {
     return <span className="font-mono text-[11px] text-faint">sem responsável</span>
   }
   return (
     <AvatarGroup max={3}>
       {ids.map((id) => {
-        const u = userById(id)
-        return <Avatar key={id} size={size === 'xs' ? 'xs' : 'sm'} name={u?.name ?? id} />
+        const u = getMember(id)
+        return <Avatar key={id} size={size === 'xs' ? 'xs' : 'sm'} name={u?.name ?? '?'} />
       })}
     </AvatarGroup>
   )
@@ -327,6 +327,7 @@ function ListView({
 /* ------------------------------------------------------------ admin summary */
 
 function AdminSummary({ tasks }: { tasks: Task[] }) {
+  const { members } = useProfiles()
   const total = tasks.length
   const inProgress = tasks.filter((t) => t.status === 'em-andamento' || t.status === 'em-revisao').length
   const done = tasks.filter((t) => t.status === 'concluida').length
@@ -334,11 +335,12 @@ function AdminSummary({ tasks }: { tasks: Task[] }) {
   const overdue = tasks.filter((x) => x.due && x.due < t && x.status !== 'concluida').length
 
   // Progresso por pessoa (apenas quem tem tarefa atribuída).
-  const perPerson = USERS.map((u) => {
-    const mine = tasks.filter((task) => task.assignees.includes(u.id))
-    const concl = mine.filter((task) => task.status === 'concluida').length
-    return { user: u, total: mine.length, done: concl }
-  })
+  const perPerson = members
+    .map((u) => {
+      const mine = tasks.filter((task) => task.assignees.includes(u.id))
+      const concl = mine.filter((task) => task.status === 'concluida').length
+      return { user: u, total: mine.length, done: concl }
+    })
     .filter((p) => p.total > 0)
     .sort((a, b) => b.total - a.total)
 
@@ -408,6 +410,7 @@ function TaskFormModal({
   onClose: () => void
   onSubmit: (draft: Draft) => void
 }) {
+  const { members } = useProfiles()
   const [draft, setDraft] = useState<Draft>(EMPTY)
 
   // Sincroniza o rascunho quando abre (cria ou edita).
@@ -503,19 +506,25 @@ function TaskFormModal({
         </div>
         <div>
           <div className="mb-2 text-body-s font-medium text-strong">Responsáveis</div>
-          <div className="grid max-h-44 grid-cols-1 gap-1 overflow-y-auto rounded-md border border-line bg-slate-900 p-2 sm:grid-cols-2">
-            {USERS.map((u) => (
-              <label
-                key={u.id}
-                className="flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 transition-colors hover:bg-slate-800"
-              >
-                <Checkbox checked={draft.assignees.includes(u.id)} onChange={() => toggleAssignee(u.id)} />
-                <Avatar size="xs" name={u.name} />
-                <span className="min-w-0 flex-1 truncate text-body-s text-strong">{u.name}</span>
-                <span className="font-mono text-[10px] uppercase text-faint">{u.team}</span>
-              </label>
-            ))}
-          </div>
+          {members.length === 0 ? (
+            <p className="rounded-md border border-line bg-slate-900 p-3 text-body-s text-faint">
+              Nenhum membro cadastrado ainda. Crie usuários para poder atribuir.
+            </p>
+          ) : (
+            <div className="grid max-h-44 grid-cols-1 gap-1 overflow-y-auto rounded-md border border-line bg-slate-900 p-2 sm:grid-cols-2">
+              {members.map((u) => (
+                <label
+                  key={u.id}
+                  className="flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 transition-colors hover:bg-slate-800"
+                >
+                  <Checkbox checked={draft.assignees.includes(u.id)} onChange={() => toggleAssignee(u.id)} />
+                  <Avatar size="xs" name={u.name} />
+                  <span className="min-w-0 flex-1 truncate text-body-s text-strong">{u.name}</span>
+                  {u.team && <span className="font-mono text-[10px] uppercase text-faint">{u.team}</span>}
+                </label>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </Modal>
@@ -542,6 +551,7 @@ function TaskDrawer({
   onDelete: () => void
 }) {
   const navigate = useNavigate()
+  const { getMember } = useProfiles()
   if (!task) return null
   const done = task.status === 'concluida'
   const client = task.clientId ? getClient(task.clientId) : undefined
@@ -629,12 +639,12 @@ function TaskDrawer({
           ) : (
             <ul className="flex flex-col gap-2">
               {task.assignees.map((id) => {
-                const u = userById(id)
+                const u = getMember(id)
                 return (
                   <li key={id} className="flex items-center gap-2.5">
-                    <Avatar size="sm" name={u?.name ?? id} />
-                    <span className="text-body-s text-strong">{u?.name ?? id}</span>
-                    {u && <span className="font-mono text-[11px] text-faint">{u.role} · {u.team}</span>}
+                    <Avatar size="sm" name={u?.name ?? '?'} />
+                    <span className="text-body-s text-strong">{u?.name ?? 'Desconhecido'}</span>
+                    {u && <span className="font-mono text-[11px] text-faint">{u.role === 'admin' ? 'Admin' : 'Colaborador'}{u.team ? ` · ${u.team}` : ''}</span>}
                   </li>
                 )
               })}
@@ -682,12 +692,13 @@ function TaskDrawer({
 export function TasksPage() {
   const toast = useToast()
   const { role, user } = useSession()
-  const { tasks, addTask, editTask, moveTask, removeTask } = useTasks()
+  const { tasks, loading, addTask, editTask, moveTask, removeTask } = useTasks()
+  const { members } = useProfiles()
   const canManage = role === 'admin'
 
   const [view, setView] = useState<'board' | 'list'>('board')
   const [search, setSearch] = useState('')
-  const [assignee, setAssignee] = useState<string>(canManage ? 'all' : user.id)
+  const [assignee, setAssignee] = useState<string>(canManage ? 'all' : 'mine')
   const [tagFilter, setTagFilter] = useState<string>('all')
 
   const [formOpen, setFormOpen] = useState(false)
@@ -745,6 +756,16 @@ export function TasksPage() {
     setEditing(null)
   }
 
+  if (loading) {
+    return (
+      <div className="mx-auto max-w-6xl px-6 py-8">
+        <div className="grid place-items-center py-24 text-muted">
+          <Loader2 size={26} strokeWidth={1.5} className="animate-spin text-steel-300" aria-label="Carregando tarefas" />
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-5 px-6 py-8">
       {/* Cabeçalho */}
@@ -790,7 +811,7 @@ export function TasksPage() {
             <Select value={assignee} onChange={(e) => setAssignee(e.target.value)} aria-label="Filtrar por responsável">
               <option value="all">Todos os responsáveis</option>
               <option value="mine">Minhas tarefas</option>
-              {USERS.map((u) => (
+              {members.map((u) => (
                 <option key={u.id} value={u.id}>{u.name}</option>
               ))}
             </Select>

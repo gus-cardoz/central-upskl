@@ -1,11 +1,9 @@
 import { useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { Plus, MoreHorizontal, Pencil, Mail, Trash2, UserX, SlidersHorizontal } from 'lucide-react'
+import { Plus, MoreHorizontal, Pencil, UserX, Loader2, ShieldCheck } from 'lucide-react'
 import {
   SectionHeader,
   Button,
   SearchField,
-  Combobox,
   Tabs,
   TabList,
   Tab,
@@ -16,80 +14,191 @@ import {
   TableHeaderCell,
   TableCell,
   TableEmpty,
-  TableFooter,
-  Checkbox,
   Badge,
   Avatar,
-  Pagination,
   EmptyState,
   DropdownMenu,
   MenuItem,
   MenuSeparator,
   IconButton,
+  Modal,
+  Input,
+  Select,
   useToast,
-  type ComboboxOption,
 } from '@/components/ui'
-import { USERS, STATUS_META, type UserStatus } from './data'
+import { useSession } from '@/lib/session'
+import { useProfiles, type Member, type MemberRole, type MemberStatus } from './profiles'
+import { STATUS_META } from './data'
 
-const PAGE_SIZE = 6
+const ROLE_LABEL: Record<MemberRole, string> = { admin: 'Admin', colaborador: 'Colaborador' }
+const ROLE_TONE: Record<MemberRole, 'steel' | 'neutral'> = { admin: 'steel', colaborador: 'neutral' }
+const STATUSES: MemberStatus[] = ['ativo', 'convidado', 'suspenso']
 
-const TEAM_OPTIONS: ComboboxOption[] = Array.from(new Set(USERS.map((u) => u.team))).map((t) => ({
-  value: t,
-  label: t,
-}))
+/* ----------------------------------------------------------- modal de edição */
+function EditMemberModal({
+  member,
+  onClose,
+  onSave,
+}: {
+  member: Member | null
+  onClose: () => void
+  onSave: (id: string, patch: { name: string; role: MemberRole; team: string; status: MemberStatus }) => void
+}) {
+  const [name, setName] = useState('')
+  const [role, setRole] = useState<MemberRole>('colaborador')
+  const [team, setTeam] = useState('')
+  const [status, setStatus] = useState<MemberStatus>('ativo')
 
+  useMemo(() => {
+    if (member) {
+      setName(member.name)
+      setRole(member.role)
+      setTeam(member.team ?? '')
+      setStatus(member.status)
+    }
+  }, [member])
+
+  if (!member) return null
+  return (
+    <Modal
+      open={!!member}
+      onClose={onClose}
+      title="Editar usuário"
+      description={member.email ?? undefined}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>Cancelar</Button>
+          <Button onClick={() => onSave(member.id, { name, role, team, status })}>Salvar</Button>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-4">
+        <Input label="Nome" value={name} onChange={(e) => setName(e.target.value)} />
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Select label="Papel" value={role} onChange={(e) => setRole(e.target.value as MemberRole)}>
+            <option value="admin">Admin</option>
+            <option value="colaborador">Colaborador</option>
+          </Select>
+          <Select label="Status" value={status} onChange={(e) => setStatus(e.target.value as MemberStatus)}>
+            {STATUSES.map((s) => (
+              <option key={s} value={s}>{STATUS_META[s].label}</option>
+            ))}
+          </Select>
+        </div>
+        <Input label="Time" optional value={team} onChange={(e) => setTeam(e.target.value)} placeholder="Ex.: Conteúdo" />
+      </div>
+    </Modal>
+  )
+}
+
+/* ----------------------------------------------------------- modal de criação */
+function CreateUserModal({
+  open,
+  onClose,
+  onCreate,
+  creating,
+}: {
+  open: boolean
+  onClose: () => void
+  onCreate: (input: { email: string; password: string; name: string; role: MemberRole; team: string }) => void
+  creating: boolean
+}) {
+  const [name, setName] = useState('')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [role, setRole] = useState<MemberRole>('colaborador')
+  const [team, setTeam] = useState('')
+
+  useMemo(() => {
+    if (open) { setName(''); setEmail(''); setPassword(''); setRole('colaborador'); setTeam('') }
+  }, [open])
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Novo usuário"
+      description="A pessoa entra com este e-mail e senha. Sem cadastro aberto."
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>Cancelar</Button>
+          <Button loading={creating} onClick={() => onCreate({ email, password, name, role, team })}>
+            Criar usuário
+          </Button>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-4">
+        <Input label="Nome" value={name} onChange={(e) => setName(e.target.value)} placeholder="Nome da pessoa" autoFocus />
+        <Input label="E-mail" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="pessoa@empresa.com" />
+        <Input label="Senha provisória" type="text" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="mínimo 6 caracteres" helperText="A pessoa pode trocar depois." />
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Select label="Papel" value={role} onChange={(e) => setRole(e.target.value as MemberRole)}>
+            <option value="colaborador">Colaborador</option>
+            <option value="admin">Admin</option>
+          </Select>
+          <Input label="Time" optional value={team} onChange={(e) => setTeam(e.target.value)} placeholder="Ex.: Suporte" />
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
+/* ============================================================== página ===== */
 export function UsersPage() {
-  const navigate = useNavigate()
   const toast = useToast()
+  const { role: myRole } = useSession()
+  const { members, loading, updateMember, createUser } = useProfiles()
+  const isAdmin = myRole === 'admin'
 
   const [query, setQuery] = useState('')
-  const [team, setTeam] = useState<string | null>(null)
-  const [status, setStatus] = useState<'todos' | UserStatus>('todos')
-  const [sortDir, setSortDir] = useState<'asc' | 'desc' | false>(false)
-  const [selected, setSelected] = useState<Set<string>>(new Set())
-  const [page, setPage] = useState(1)
+  const [status, setStatus] = useState<'todos' | MemberStatus>('todos')
+  const [editing, setEditing] = useState<Member | null>(null)
+  const [createOpen, setCreateOpen] = useState(false)
+  const [creating, setCreating] = useState(false)
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
-    let rows = USERS.filter((u) => {
-      const matchQ = !q || u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q)
-      const matchTeam = !team || u.team === team
+    return members.filter((u) => {
+      const matchQ = !q || u.name.toLowerCase().includes(q) || (u.email ?? '').toLowerCase().includes(q)
       const matchStatus = status === 'todos' || u.status === status
-      return matchQ && matchTeam && matchStatus
+      return matchQ && matchStatus
     })
-    if (sortDir) rows = [...rows].sort((a, b) => (sortDir === 'asc' ? a.sessions - b.sessions : b.sessions - a.sessions))
-    return rows
-  }, [query, team, status, sortDir])
-
-  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
-  const safePage = Math.min(page, pageCount)
-  const pageRows = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE)
-
-  const allOnPageSelected = pageRows.length > 0 && pageRows.every((r) => selected.has(r.id))
-  const someSelected = pageRows.some((r) => selected.has(r.id))
-
-  const resetPage = () => setPage(1)
-
-  const toggleAll = () =>
-    setSelected((cur) => {
-      const next = new Set(cur)
-      if (allOnPageSelected) pageRows.forEach((r) => next.delete(r.id))
-      else pageRows.forEach((r) => next.add(r.id))
-      return next
-    })
-
-  const toggleOne = (id: string) =>
-    setSelected((cur) => {
-      const next = new Set(cur)
-      next.has(id) ? next.delete(id) : next.add(id)
-      return next
-    })
+  }, [members, query, status])
 
   const counts = {
-    todos: USERS.length,
-    ativo: USERS.filter((u) => u.status === 'ativo').length,
-    convidado: USERS.filter((u) => u.status === 'convidado').length,
-    suspenso: USERS.filter((u) => u.status === 'suspenso').length,
+    todos: members.length,
+    ativo: members.filter((u) => u.status === 'ativo').length,
+    convidado: members.filter((u) => u.status === 'convidado').length,
+    suspenso: members.filter((u) => u.status === 'suspenso').length,
+  }
+
+  const save = async (id: string, patch: { name: string; role: MemberRole; team: string; status: MemberStatus }) => {
+    const { error } = await updateMember(id, { ...patch, team: patch.team.trim() || null })
+    if (error) toast.error('Falha ao salvar', error)
+    else toast.success('Usuário atualizado', patch.name)
+    setEditing(null)
+  }
+
+  const create = async (input: { email: string; password: string; name: string; role: MemberRole; team: string }) => {
+    if (!input.email.trim() || !input.password) {
+      toast.error('Informe e-mail e senha')
+      return
+    }
+    setCreating(true)
+    const { error } = await createUser({
+      email: input.email.trim(),
+      password: input.password,
+      name: input.name.trim(),
+      role: input.role,
+      team: input.team.trim() || undefined,
+    })
+    setCreating(false)
+    if (error) toast.error('Não foi possível criar', error)
+    else {
+      toast.success('Usuário criado', input.email)
+      setCreateOpen(false)
+    }
   }
 
   return (
@@ -97,17 +206,18 @@ export function UsersPage() {
       <SectionHeader
         eyebrow="Operação"
         title="Usuários"
-        description="Gerencie acessos, papéis e status da equipe."
+        description="Gerencie o time, papéis e status de acesso."
         className="mb-6"
         actions={
-          <Button leftIcon={<Plus size={18} strokeWidth={1.5} />} onClick={() => toast.success('Convite enviado', 'O novo usuário receberá um e-mail.')}>
-            Novo usuário
-          </Button>
+          isAdmin ? (
+            <Button leftIcon={<Plus size={18} strokeWidth={1.5} />} onClick={() => setCreateOpen(true)}>
+              Novo usuário
+            </Button>
+          ) : undefined
         }
       />
 
-      {/* Abas de status */}
-      <Tabs value={status} onValueChange={(v) => { setStatus(v as typeof status); resetPage() }} className="mb-4">
+      <Tabs value={status} onValueChange={(v) => setStatus(v as typeof status)} className="mb-4">
         <TabList aria-label="Filtrar por status">
           <Tab value="todos" badge={<Badge tone="neutral">{counts.todos}</Badge>}>Todos</Tab>
           <Tab value="ativo" badge={<Badge tone="success">{counts.ativo}</Badge>}>Ativos</Tab>
@@ -116,153 +226,105 @@ export function UsersPage() {
         </TabList>
       </Tabs>
 
-      {/* Filtros */}
-      <div className="mb-4 flex flex-wrap items-end gap-3">
-        <div className="min-w-56 flex-1">
-          <SearchField
-            value={query}
-            onChange={(e) => { setQuery(e.target.value); resetPage() }}
-            onClear={() => { setQuery(''); resetPage() }}
-            placeholder="Buscar por nome ou e-mail"
-            aria-label="Buscar usuários"
-          />
-        </div>
-        <div className="w-56">
-          <Combobox
-            options={TEAM_OPTIONS}
-            value={team}
-            onChange={(v) => { setTeam(v); resetPage() }}
-            placeholder="Todos os times"
-          />
-        </div>
-        <Button variant="secondary" leftIcon={<SlidersHorizontal size={18} strokeWidth={1.5} />}>
-          Filtros
-        </Button>
+      <div className="mb-4 max-w-md">
+        <SearchField
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onClear={() => setQuery('')}
+          placeholder="Buscar por nome ou e-mail"
+          aria-label="Buscar usuários"
+        />
       </div>
 
-      {/* Barra de seleção */}
-      {someSelected && (
-        <div className="mb-3 flex items-center gap-3 rounded-md border border-steel-500/30 bg-steel-tint px-3 py-2">
-          <span className="font-mono text-mono-data text-steel-300">
-            {[...selected].length} selecionado(s)
-          </span>
-          <div className="ml-auto flex items-center gap-2">
-            <Button size="sm" variant="ghost" leftIcon={<Mail size={16} strokeWidth={1.5} />}>
-              Reenviar convite
-            </Button>
-            <Button size="sm" variant="danger" leftIcon={<UserX size={16} strokeWidth={1.5} />} onClick={() => { setSelected(new Set()); toast.info('Ação aplicada') }}>
-              Suspender
-            </Button>
-          </div>
+      {loading ? (
+        <div className="grid place-items-center py-24">
+          <Loader2 size={26} strokeWidth={1.5} className="animate-spin text-steel-300" aria-label="Carregando" />
         </div>
+      ) : (
+        <Table>
+          <TableHead>
+            <TableRow>
+              <TableHeaderCell>Usuário</TableHeaderCell>
+              <TableHeaderCell>Papel</TableHeaderCell>
+              <TableHeaderCell>Time</TableHeaderCell>
+              <TableHeaderCell>Status</TableHeaderCell>
+              {isAdmin && <TableHeaderCell className="w-12" align="right">Ações</TableHeaderCell>}
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {filtered.length === 0 ? (
+              <TableEmpty colSpan={isAdmin ? 5 : 4}>
+                <EmptyState
+                  className="border-0 bg-transparent py-0"
+                  icon={<UserX size={22} strokeWidth={1.5} />}
+                  title="Nenhum usuário encontrado"
+                  description={members.length === 0 ? 'Crie o primeiro usuário do time.' : 'Ajuste a busca ou o filtro.'}
+                />
+              </TableEmpty>
+            ) : (
+              filtered.map((u) => {
+                const meta = STATUS_META[u.status]
+                return (
+                  <TableRow key={u.id}>
+                    <TableCell>
+                      <div className="flex items-center gap-3">
+                        <Avatar size="sm" name={u.name} />
+                        <div className="min-w-0">
+                          <div className="font-medium text-strong">{u.name || '—'}</div>
+                          <div className="font-mono text-[11px] text-faint">{u.email}</div>
+                        </div>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge tone={ROLE_TONE[u.role]} dot={u.role === 'admin'}>{ROLE_LABEL[u.role]}</Badge>
+                    </TableCell>
+                    <TableCell>{u.team || <span className="text-faint">—</span>}</TableCell>
+                    <TableCell>
+                      <Badge tone={meta.tone} dot>{meta.label}</Badge>
+                    </TableCell>
+                    {isAdmin && (
+                      <TableCell align="right">
+                        <DropdownMenu
+                          align="end"
+                          trigger={
+                            <IconButton size="sm" aria-label={`Ações de ${u.name}`}>
+                              <MoreHorizontal size={16} strokeWidth={1.5} />
+                            </IconButton>
+                          }
+                        >
+                          <MenuItem icon={<Pencil size={16} strokeWidth={1.5} />} onClick={() => setEditing(u)}>
+                            Editar
+                          </MenuItem>
+                          <MenuSeparator />
+                          {u.status !== 'suspenso' ? (
+                            <MenuItem
+                              icon={<UserX size={16} strokeWidth={1.5} />}
+                              destructive
+                              onClick={() => save(u.id, { name: u.name, role: u.role, team: u.team ?? '', status: 'suspenso' })}
+                            >
+                              Suspender
+                            </MenuItem>
+                          ) : (
+                            <MenuItem
+                              icon={<ShieldCheck size={16} strokeWidth={1.5} />}
+                              onClick={() => save(u.id, { name: u.name, role: u.role, team: u.team ?? '', status: 'ativo' })}
+                            >
+                              Reativar
+                            </MenuItem>
+                          )}
+                        </DropdownMenu>
+                      </TableCell>
+                    )}
+                  </TableRow>
+                )
+              })
+            )}
+          </TableBody>
+        </Table>
       )}
 
-      <Table>
-        <TableHead>
-          <TableRow>
-            <TableHeaderCell className="w-10">
-              <Checkbox
-                aria-label="Selecionar página"
-                checked={allOnPageSelected}
-                indeterminate={someSelected && !allOnPageSelected}
-                onChange={toggleAll}
-              />
-            </TableHeaderCell>
-            <TableHeaderCell>Usuário</TableHeaderCell>
-            <TableHeaderCell>Papel</TableHeaderCell>
-            <TableHeaderCell>Time</TableHeaderCell>
-            <TableHeaderCell
-              align="right"
-              sortable
-              sortDirection={sortDir}
-              onSort={() => setSortDir((d) => (d === 'asc' ? 'desc' : d === 'desc' ? false : 'asc'))}
-            >
-              Sessões
-            </TableHeaderCell>
-            <TableHeaderCell>Status</TableHeaderCell>
-            <TableHeaderCell className="w-12" align="right">Ações</TableHeaderCell>
-          </TableRow>
-        </TableHead>
-        <TableBody>
-          {pageRows.length === 0 ? (
-            <TableEmpty colSpan={7}>
-              <EmptyState
-                className="border-0 bg-transparent py-0"
-                icon={<UserX size={22} strokeWidth={1.5} />}
-                title="Nenhum usuário encontrado"
-                description="Ajuste a busca ou os filtros para ver mais resultados."
-                action={
-                  <Button size="sm" variant="secondary" onClick={() => { setQuery(''); setTeam(null); setStatus('todos'); resetPage() }}>
-                    Limpar filtros
-                  </Button>
-                }
-              />
-            </TableEmpty>
-          ) : (
-            pageRows.map((u) => {
-              const meta = STATUS_META[u.status]
-              return (
-                <TableRow
-                  key={u.id}
-                  interactive
-                  selected={selected.has(u.id)}
-                  onClick={() => navigate(`/app/usuarios/${u.id}`)}
-                >
-                  <TableCell onClick={(e) => e.stopPropagation()}>
-                    <Checkbox
-                      aria-label={`Selecionar ${u.name}`}
-                      checked={selected.has(u.id)}
-                      onChange={() => toggleOne(u.id)}
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-3">
-                      <Avatar size="sm" name={u.name} />
-                      <div className="min-w-0">
-                        <div className="font-medium text-strong">{u.name}</div>
-                        <div className="font-mono text-[11px] text-faint">{u.email}</div>
-                      </div>
-                    </div>
-                  </TableCell>
-                  <TableCell>{u.role}</TableCell>
-                  <TableCell>{u.team}</TableCell>
-                  <TableCell align="right" mono>{u.sessions}</TableCell>
-                  <TableCell>
-                    <Badge tone={meta.tone} dot>{meta.label}</Badge>
-                  </TableCell>
-                  <TableCell align="right" onClick={(e) => e.stopPropagation()}>
-                    <DropdownMenu
-                      align="end"
-                      trigger={
-                        <IconButton size="sm" aria-label={`Ações de ${u.name}`}>
-                          <MoreHorizontal size={16} strokeWidth={1.5} />
-                        </IconButton>
-                      }
-                    >
-                      <MenuItem icon={<Pencil size={16} strokeWidth={1.5} />} onClick={() => navigate(`/app/usuarios/${u.id}`)}>
-                        Editar
-                      </MenuItem>
-                      <MenuItem icon={<Mail size={16} strokeWidth={1.5} />}>Reenviar convite</MenuItem>
-                      <MenuSeparator />
-                      <MenuItem icon={<Trash2 size={16} strokeWidth={1.5} />} destructive>Remover</MenuItem>
-                    </DropdownMenu>
-                  </TableCell>
-                </TableRow>
-              )
-            })
-          )}
-        </TableBody>
-      </Table>
-
-      <TableFooter className="mt-3 rounded-lg border border-line">
-        <Pagination
-          page={safePage}
-          pageCount={pageCount}
-          onPageChange={setPage}
-          totalItems={filtered.length}
-          pageSize={PAGE_SIZE}
-        />
-      </TableFooter>
+      <EditMemberModal member={editing} onClose={() => setEditing(null)} onSave={save} />
+      <CreateUserModal open={createOpen} onClose={() => setCreateOpen(false)} onCreate={create} creating={creating} />
     </div>
   )
 }
