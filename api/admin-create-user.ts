@@ -43,13 +43,19 @@ export default async function handler(req: any, res: any) {
     res.status(401).json({ error: 'Sessão inválida.' })
     return
   }
-  const { data: profile } = await admin
+  const { data: profile, error: profErr } = await admin
     .from('profiles')
     .select('role')
     .eq('id', caller.user.id)
     .single()
-  if (!profile || profile.role !== 'admin') {
-    res.status(403).json({ error: 'Apenas administradores podem criar usuários.' })
+  if (profErr || !profile) {
+    res.status(403).json({
+      error: `Não consegui ler seu perfil (uid ${caller.user.id}): ${profErr?.message ?? 'sem linha'}.`,
+    })
+    return
+  }
+  if (profile.role !== 'admin') {
+    res.status(403).json({ error: `Seu papel no banco é "${profile.role}", não "admin".` })
     return
   }
 
