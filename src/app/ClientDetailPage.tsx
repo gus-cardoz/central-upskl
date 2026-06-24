@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { Building2, Mail, MoreHorizontal, Pause, Trash2, CalendarDays, ArrowRight, ChevronDown, Check, Camera } from 'lucide-react'
+import { Building2, Mail, MoreHorizontal, Pause, Trash2, CalendarDays, ChevronDown, Check, Camera } from 'lucide-react'
 import {
   Breadcrumb,
   Button,
@@ -16,7 +16,6 @@ import {
   Tab,
   TabPanel,
   ProgressBar,
-  AgendaRow,
   AvatarGroup,
   EmptyState,
   DropdownMenu,
@@ -25,8 +24,9 @@ import {
   MenuSeparator,
   useToast,
 } from '@/components/ui'
-import { CLIENT_STATUS_META, TEAM_AGENDA, TEAM, type ClientStatus } from './data'
+import { CLIENT_STATUS_META, type ClientStatus } from './data'
 import { useClients } from './clients'
+import { useProfiles } from './profiles'
 import { ClientAvatar } from './ClientAvatar'
 import { ClientAccess } from './ClientAccess'
 import { useSession } from '@/lib/session'
@@ -91,6 +91,7 @@ export function ClientDetailPage() {
   const toast = useToast()
   const { role } = useSession()
   const { getClient, setClientStatus, setClientAvatar } = useClients()
+  const { members } = useProfiles()
   const client = getClient(id)
   const [tab, setTab] = useState('visao')
   const fileRef = useRef<HTMLInputElement>(null)
@@ -129,7 +130,6 @@ export function ClientDetailPage() {
     )
   }
 
-  const events = TEAM_AGENDA.filter((e) => e.clientId === client.id)
   const tone = client.status === 'pausado' ? 'warning' : 'steel'
 
   return (
@@ -232,12 +232,18 @@ export function ClientDetailPage() {
               <CardTitle className="mb-1">Time responsável</CardTitle>
               <p className="mb-4 text-body-s text-muted">Todo o time acompanha este cliente.</p>
               <div className="flex items-center gap-3">
-                <AvatarGroup max={5}>
-                  {TEAM.map((u) => (
-                    <Avatar key={u.id} size="md" name={u.name} status="online" />
-                  ))}
-                </AvatarGroup>
-                <span className="font-mono text-mono-data text-faint">{TEAM.length} pessoas</span>
+                {members.length > 0 ? (
+                  <>
+                    <AvatarGroup max={5}>
+                      {members.map((u) => (
+                        <Avatar key={u.id} size="md" name={u.name} status="online" />
+                      ))}
+                    </AvatarGroup>
+                    <span className="font-mono text-mono-data text-faint">{members.length} pessoas</span>
+                  </>
+                ) : (
+                  <span className="text-body-s text-faint">Nenhum membro cadastrado.</span>
+                )}
               </div>
               <Divider className="my-4" />
               <dl className="flex flex-col gap-3 text-body-s">
@@ -261,46 +267,12 @@ export function ClientDetailPage() {
 
         {/* AGENDA */}
         <TabPanel value="agenda">
-          {events.length === 0 ? (
-            <EmptyState
-              icon={<CalendarDays size={22} strokeWidth={1.5} />}
-              title="Sem compromissos"
-              description="Este cliente não tem eventos agendados."
-              action={<Button onClick={() => navigate('/app/agenda')}>Abrir agenda</Button>}
-            />
-          ) : (
-            <div className="flex flex-col gap-2">
-              {events.map((ev) => (
-                <AgendaRow
-                  key={ev.id}
-                  day={ev.day}
-                  month={ev.month}
-                  time={ev.time}
-                  title={ev.title}
-                  meta={ev.meta}
-                  category={ev.category}
-                  interactive
-                  onClick={() => navigate('/app/agenda')}
-                  trailing={
-                    ev.people ? (
-                      <AvatarGroup max={3}>
-                        {ev.people.map((p) => (
-                          <Avatar key={p} size="sm" name={p} />
-                        ))}
-                      </AvatarGroup>
-                    ) : undefined
-                  }
-                />
-              ))}
-              <button
-                onClick={() => navigate('/app/agenda')}
-                className="mt-2 inline-flex items-center gap-1.5 self-start font-mono text-mono-data text-steel-300 transition-colors hover:text-steel-400 focus-visible:outline-none focus-visible:shadow-focus"
-              >
-                Ver agenda completa
-                <ArrowRight size={14} strokeWidth={1.5} aria-hidden />
-              </button>
-            </div>
-          )}
+          <EmptyState
+            icon={<CalendarDays size={22} strokeWidth={1.5} />}
+            title="Sem compromissos"
+            description="Compromissos vinculados a este cliente aparecerão aqui."
+            action={<Button onClick={() => navigate('/app/agenda')}>Abrir agenda</Button>}
+          />
         </TabPanel>
       </Tabs>
     </div>

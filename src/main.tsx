@@ -20,6 +20,7 @@ import { EditorialProvider } from './app/editorial'
 import { ContentProvider } from './app/content'
 import { TasksProvider } from './app/tasks'
 import { ProfilesProvider } from './app/profiles'
+import { AgendaProvider } from './app/agenda'
 import { StyleguidePage } from './pages/Styleguide'
 import { AppShell } from './app/AppShell'
 import { DashboardPage } from './app/DashboardPage'
@@ -63,9 +64,11 @@ createRoot(document.getElementById('root')!).render(
             <ContentProvider>
               <ProfilesProvider>
                 <TasksProvider>
-                  <ToastProvider>
-                    <RouterProvider router={router} />
-                  </ToastProvider>
+                  <AgendaProvider>
+                    <ToastProvider>
+                      <RouterProvider router={router} />
+                    </ToastProvider>
+                  </AgendaProvider>
                 </TasksProvider>
               </ProfilesProvider>
             </ContentProvider>

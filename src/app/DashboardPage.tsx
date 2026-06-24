@@ -22,11 +22,10 @@ import { useSession } from '@/lib/session'
 import { useClients } from './clients'
 import { useTasks } from './tasks'
 import { useProfiles } from './profiles'
+import { useAgenda, type AgendaEvent } from './agenda'
 import { ClientAvatar } from './ClientAvatar'
 import {
   CLIENT_STATUS_META,
-  TEAM_AGENDA,
-  TODAY,
   TASK_TAG_TONE,
   type UserStatus,
 } from './data'
@@ -45,6 +44,45 @@ const PRESENCE_LABEL: Record<UserStatus, string> = {
 }
 
 const dateFmt = new Intl.DateTimeFormat('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })
+
+/* Helpers de data para a agenda (que agora vem do banco com `date` ISO). */
+const _monthFmt = new Intl.DateTimeFormat('pt-BR', { month: 'short' })
+function isoToDate(iso: string) {
+  const [y, m, d] = iso.split('-').map(Number)
+  return new Date(y, m - 1, d)
+}
+const dayOf = (iso: string) => iso.split('-')[2]
+const monthOf = (iso: string) => _monthFmt.format(isoToDate(iso)).replace('.', '').toUpperCase()
+function todayIso() {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+/** Linha de evento da agenda (resolve participantes para nomes). */
+function EventRow({ event, onClick }: { event: AgendaEvent; onClick: () => void }) {
+  const { getMember } = useProfiles()
+  return (
+    <AgendaRow
+      day={dayOf(event.date)}
+      month={monthOf(event.date)}
+      time={event.time ?? ''}
+      title={event.title}
+      meta={event.meta ?? ''}
+      category={event.category}
+      interactive
+      onClick={onClick}
+      trailing={
+        event.people.length > 0 ? (
+          <AvatarGroup max={3}>
+            {event.people.map((id) => (
+              <Avatar key={id} size="sm" name={getMember(id)?.name ?? '?'} />
+            ))}
+          </AvatarGroup>
+        ) : undefined
+      }
+    />
+  )
+}
 
 function greetingFor() {
   const now = new Date()
@@ -129,7 +167,8 @@ function AdminDashboard() {
   const firstName = user.name.split(' ')[0]
   const clientesAtivos = clients.filter((c) => c.status === 'ativo').length
   const ativos = team.filter((u) => u.status === 'ativo').length
-  const todayAgenda = TEAM_AGENDA.filter((e) => e.day === TODAY)
+  const { events } = useAgenda()
+  const todayAgenda = events.filter((e) => e.date === todayIso())
 
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-4 px-6 py-8">
@@ -170,27 +209,11 @@ function AdminDashboard() {
               </Button>
             </CardHeader>
             <div className="flex flex-col gap-2">
+              {todayAgenda.length === 0 && (
+                <p className="py-4 text-body-s text-faint">Nenhum compromisso hoje.</p>
+              )}
               {todayAgenda.map((ev) => (
-                <AgendaRow
-                  key={ev.id}
-                  day={ev.day}
-                  month={ev.month}
-                  time={ev.time}
-                  title={ev.title}
-                  meta={ev.meta}
-                  category={ev.category}
-                  interactive
-                  onClick={() => navigate('/app/agenda')}
-                  trailing={
-                    ev.people ? (
-                      <AvatarGroup max={3}>
-                        {ev.people.map((p) => (
-                          <Avatar key={p} size="sm" name={p} />
-                        ))}
-                      </AvatarGroup>
-                    ) : undefined
-                  }
-                />
+                <EventRow key={ev.id} event={ev} onClick={() => navigate('/app/agenda')} />
               ))}
             </div>
           </Card>
@@ -300,7 +323,8 @@ function CollaboratorDashboard() {
   const toggle = (id: string, status: string) =>
     moveTask(id, status === 'concluida' ? 'a-fazer' : 'concluida')
 
-  const todayAgenda = TEAM_AGENDA.filter((e) => e.day === TODAY)
+  const { events } = useAgenda()
+  const todayAgenda = events.filter((e) => e.date === todayIso() && e.people.includes(user.id))
   const myClients = MY_CLIENT_IDS.map(getClient).filter(Boolean)
 
   return (
@@ -403,29 +427,11 @@ function CollaboratorDashboard() {
               </Button>
             </CardHeader>
             <div className="flex flex-col gap-2">
+              {todayAgenda.length === 0 && (
+                <p className="py-4 text-body-s text-faint">Nenhuma reunião sua hoje.</p>
+              )}
               {todayAgenda.map((ev) => (
-                <AgendaRow
-                  key={ev.id}
-                  day={ev.day}
-                  month={ev.month}
-                  time={ev.time}
-                  title={ev.title}
-                  meta={ev.meta}
-                  category={ev.category}
-                  interactive
-                  onClick={() =>
-                    ev.clientId ? navigate(`/app/clientes/${ev.clientId}`) : navigate('/app/agenda')
-                  }
-                  trailing={
-                    ev.people ? (
-                      <AvatarGroup max={3}>
-                        {ev.people.map((p) => (
-                          <Avatar key={p} size="sm" name={p} />
-                        ))}
-                      </AvatarGroup>
-                    ) : undefined
-                  }
-                />
+                <EventRow key={ev.id} event={ev} onClick={() => navigate('/app/agenda')} />
               ))}
             </div>
           </Card>

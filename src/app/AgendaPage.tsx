@@ -1,10 +1,8 @@
-import { useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { Plus, CalendarDays, Clock, MapPin, Video, Building2, Users, ExternalLink } from 'lucide-react'
+import { useMemo, useState, useEffect } from 'react'
+import { Plus, CalendarDays, Clock, MapPin, Video, Users, ExternalLink, Pencil, Trash2, Loader2 } from 'lucide-react'
 import {
   SectionHeader,
   Button,
-  Card,
   AgendaRow,
   Avatar,
   AvatarGroup,
@@ -12,31 +10,62 @@ import {
   Tabs,
   TabList,
   Tab,
+  Input,
+  Textarea,
+  Select,
   DatePicker,
+  Checkbox,
   Divider,
   Modal,
   EmptyState,
   useToast,
 } from '@/components/ui'
-import { TEAM_AGENDA, TODAY, getClient, type AgendaItem } from './data'
 import { useSession } from '@/lib/session'
+import { useAgenda, type AgendaEvent, type AgendaCategory, type AgendaInput } from './agenda'
+import { useProfiles } from './profiles'
 
-interface DayGroup {
-  day: string
-  month: string
-  weekday: string
-  items: AgendaItem[]
+/* ----------------------------------------------------------------- helpers */
+const weekdayFmt = new Intl.DateTimeFormat('pt-BR', { weekday: 'long' })
+const monthShortFmt = new Intl.DateTimeFormat('pt-BR', { month: 'short' })
+
+function isoToDate(iso: string): Date {
+  const [y, m, d] = iso.split('-').map(Number)
+  return new Date(y, m - 1, d)
+}
+function dateToIso(d: Date | null): string {
+  if (!d) return ''
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+function todayIso() {
+  return dateToIso(new Date())
+}
+const dayLabel = (iso: string) => iso.split('-')[2]
+const monthLabel = (iso: string) => monthShortFmt.format(isoToDate(iso)).replace('.', '').toUpperCase()
+const weekdayLabel = (iso: string) => {
+  const w = weekdayFmt.format(isoToDate(iso))
+  return w.charAt(0).toUpperCase() + w.slice(1)
 }
 
-function groupByDay(items: AgendaItem[]): DayGroup[] {
+const CATEGORY_LABEL: Record<AgendaCategory, string> = {
+  steel: 'Reunião',
+  sand: 'Cliente',
+  success: 'Time',
+  danger: 'Importante',
+}
+const CATEGORIES: AgendaCategory[] = ['steel', 'sand', 'success', 'danger']
+
+interface DayGroup {
+  date: string
+  items: AgendaEvent[]
+}
+function groupByDay(items: AgendaEvent[]): DayGroup[] {
   const order: DayGroup[] = []
   const map = new Map<string, DayGroup>()
   for (const ev of items) {
-    const key = `${ev.day}-${ev.month}`
-    let g = map.get(key)
+    let g = map.get(ev.date)
     if (!g) {
-      g = { day: ev.day, month: ev.month, weekday: ev.weekday, items: [] }
-      map.set(key, g)
+      g = { date: ev.date, items: [] }
+      map.set(ev.date, g)
       order.push(g)
     }
     g.items.push(ev)
@@ -44,7 +73,7 @@ function groupByDay(items: AgendaItem[]): DayGroup[] {
   return order
 }
 
-/** Linha de metadado do modal (ícone + texto). */
+/* ---------------------------------------------------- popup de detalhes ---- */
 function MetaRow({ icon, children }: { icon: React.ReactNode; children: React.ReactNode }) {
   return (
     <div className="flex items-center gap-2.5 text-body-s text-fg">
@@ -54,11 +83,21 @@ function MetaRow({ icon, children }: { icon: React.ReactNode; children: React.Re
   )
 }
 
-/** Popup de detalhes de um compromisso da agenda. */
-function EventModal({ event, onClose }: { event: AgendaItem | null; onClose: () => void }) {
-  const navigate = useNavigate()
+function EventModal({
+  event,
+  canManage,
+  onClose,
+  onEdit,
+  onDelete,
+}: {
+  event: AgendaEvent | null
+  canManage: boolean
+  onClose: () => void
+  onEdit: () => void
+  onDelete: () => void
+}) {
+  const { getMember } = useProfiles()
   if (!event) return null
-  const client = event.clientId ? getClient(event.clientId) : undefined
   const dot =
     event.category === 'sand' ? 'bg-sand-300'
     : event.category === 'success' ? 'bg-ok'
@@ -75,24 +114,20 @@ function EventModal({ event, onClose }: { event: AgendaItem | null; onClose: () 
           {event.title}
         </span>
       }
-      description={`${event.weekday}, ${event.day} ${event.month.toLowerCase()}`}
+      description={`${weekdayLabel(event.date)}, ${dayLabel(event.date)} ${monthLabel(event.date).toLowerCase()}`}
       footer={
         <>
-          <Button variant="ghost" onClick={onClose}>Fechar</Button>
-          {client && (
-            <Button
-              variant="secondary"
-              leftIcon={<Building2 size={16} strokeWidth={1.5} />}
-              onClick={() => { onClose(); navigate(`/app/clientes/${client.id}`) }}
-            >
-              Abrir cliente
-            </Button>
+          {canManage && (
+            <>
+              <Button variant="ghost" leftIcon={<Trash2 size={16} strokeWidth={1.5} />} onClick={onDelete}>Excluir</Button>
+              <Button variant="secondary" leftIcon={<Pencil size={16} strokeWidth={1.5} />} onClick={onEdit}>Editar</Button>
+            </>
           )}
           {event.meetingUrl && (
             <Button
               className="text-white [&_svg]:text-white"
               leftIcon={<Video size={16} strokeWidth={1.5} />}
-              onClick={() => window.open(event.meetingUrl, '_blank', 'noopener,noreferrer')}
+              onClick={() => window.open(event.meetingUrl!, '_blank', 'noopener,noreferrer')}
             >
               Entrar na chamada
             </Button>
@@ -102,21 +137,11 @@ function EventModal({ event, onClose }: { event: AgendaItem | null; onClose: () 
     >
       <div className="flex flex-col gap-4">
         <div className="flex flex-col gap-2.5">
-          <MetaRow icon={<Clock size={16} strokeWidth={1.5} />}>{event.time}</MetaRow>
+          {event.time && <MetaRow icon={<Clock size={16} strokeWidth={1.5} />}>{event.time}</MetaRow>}
           {event.location && <MetaRow icon={<MapPin size={16} strokeWidth={1.5} />}>{event.location}</MetaRow>}
-          {client && (
-            <MetaRow icon={<Building2 size={16} strokeWidth={1.5} />}>
-              Cliente: <span className="font-medium text-strong">{client.name}</span>
-            </MetaRow>
-          )}
           {event.meetingUrl && (
             <MetaRow icon={<Video size={16} strokeWidth={1.5} />}>
-              <a
-                href={event.meetingUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-1 text-steel-300 transition-colors hover:text-steel-400 focus-visible:outline-none focus-visible:shadow-focus"
-              >
+              <a href={event.meetingUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-steel-300 transition-colors hover:text-steel-400 focus-visible:outline-none focus-visible:shadow-focus">
                 <span className="truncate">{event.meetingUrl.replace(/^https?:\/\//, '')}</span>
                 <ExternalLink size={12} strokeWidth={1.5} aria-hidden />
               </a>
@@ -134,7 +159,7 @@ function EventModal({ event, onClose }: { event: AgendaItem | null; onClose: () 
           </>
         )}
 
-        {event.people && event.people.length > 0 && (
+        {event.people.length > 0 && (
           <>
             <Divider />
             <div>
@@ -145,12 +170,15 @@ function EventModal({ event, onClose }: { event: AgendaItem | null; onClose: () 
                 </span>
               </div>
               <ul className="flex flex-col gap-2">
-                {event.people.map((p) => (
-                  <li key={p} className="flex items-center gap-2.5">
-                    <Avatar size="sm" name={p} />
-                    <span className="text-body-s text-strong">{p}</span>
-                  </li>
-                ))}
+                {event.people.map((id) => {
+                  const m = getMember(id)
+                  return (
+                    <li key={id} className="flex items-center gap-2.5">
+                      <Avatar size="sm" name={m?.name ?? '?'} />
+                      <span className="text-body-s text-strong">{m?.name ?? 'Desconhecido'}</span>
+                    </li>
+                  )
+                })}
               </ul>
             </div>
           </>
@@ -160,17 +188,145 @@ function EventModal({ event, onClose }: { event: AgendaItem | null; onClose: () 
   )
 }
 
+/* ------------------------------------------------ formulário criar/editar -- */
+type Draft = {
+  date: string
+  time: string
+  title: string
+  category: AgendaCategory
+  meta: string
+  location: string
+  meetingUrl: string
+  description: string
+  people: string[]
+}
+const EMPTY: Draft = { date: '', time: '', title: '', category: 'steel', meta: '', location: '', meetingUrl: '', description: '', people: [] }
+
+function AgendaFormModal({
+  open,
+  editing,
+  onClose,
+  onSubmit,
+}: {
+  open: boolean
+  editing: AgendaEvent | null
+  onClose: () => void
+  onSubmit: (draft: Draft) => void
+}) {
+  const { members } = useProfiles()
+  const [draft, setDraft] = useState<Draft>(EMPTY)
+
+  useEffect(() => {
+    if (!open) return
+    setDraft(
+      editing
+        ? {
+            date: editing.date,
+            time: editing.time ?? '',
+            title: editing.title,
+            category: editing.category,
+            meta: editing.meta ?? '',
+            location: editing.location ?? '',
+            meetingUrl: editing.meetingUrl ?? '',
+            description: editing.description ?? '',
+            people: [...editing.people],
+          }
+        : EMPTY,
+    )
+  }, [open, editing])
+
+  const togglePerson = (id: string) =>
+    setDraft((d) => ({ ...d, people: d.people.includes(id) ? d.people.filter((x) => x !== id) : [...d.people, id] }))
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      size="lg"
+      title={editing ? 'Editar compromisso' : 'Novo compromisso'}
+      description="Reuniões, prazos e cerimônias do time."
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>Cancelar</Button>
+          <Button onClick={() => onSubmit(draft)}>{editing ? 'Salvar' : 'Criar'}</Button>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-4">
+        <Input label="Título" value={draft.title} onChange={(e) => setDraft((d) => ({ ...d, title: e.target.value }))} placeholder="Ex.: Stand-up do time" autoFocus />
+        <div className="grid gap-4 sm:grid-cols-3">
+          <DatePicker label="Data" value={draft.date ? isoToDate(draft.date) : null} onChange={(dt) => setDraft((d) => ({ ...d, date: dateToIso(dt) }))} />
+          <Input label="Horário" optional value={draft.time} onChange={(e) => setDraft((d) => ({ ...d, time: e.target.value }))} placeholder="09:00 – 09:15" />
+          <Select label="Tipo" value={draft.category} onChange={(e) => setDraft((d) => ({ ...d, category: e.target.value as AgendaCategory }))}>
+            {CATEGORIES.map((c) => <option key={c} value={c}>{CATEGORY_LABEL[c]}</option>)}
+          </Select>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Input label="Local" optional value={draft.location} onChange={(e) => setDraft((d) => ({ ...d, location: e.target.value }))} placeholder="Google Meet / Sala 1" />
+          <Input label="Link da chamada" optional value={draft.meetingUrl} onChange={(e) => setDraft((d) => ({ ...d, meetingUrl: e.target.value }))} placeholder="https://meet.google.com/…" leadingIcon={<Video size={16} strokeWidth={1.5} />} />
+        </div>
+        <Input label="Subtítulo" optional value={draft.meta} onChange={(e) => setDraft((d) => ({ ...d, meta: e.target.value }))} placeholder="Ex.: Diário · sala virtual" />
+        <Textarea label="Descrição / pauta" optional rows={3} value={draft.description} onChange={(e) => setDraft((d) => ({ ...d, description: e.target.value }))} />
+        <div>
+          <div className="mb-2 text-body-s font-medium text-strong">Participantes</div>
+          {members.length === 0 ? (
+            <p className="rounded-md border border-line bg-slate-900 p-3 text-body-s text-faint">Nenhum membro cadastrado.</p>
+          ) : (
+            <div className="grid max-h-40 grid-cols-1 gap-1 overflow-y-auto rounded-md border border-line bg-slate-900 p-2 sm:grid-cols-2">
+              {members.map((m) => (
+                <label key={m.id} className="flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 transition-colors hover:bg-slate-800">
+                  <Checkbox checked={draft.people.includes(m.id)} onChange={() => togglePerson(m.id)} />
+                  <Avatar size="xs" name={m.name} />
+                  <span className="min-w-0 flex-1 truncate text-body-s text-strong">{m.name}</span>
+                </label>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
+/* ============================================================== página ===== */
 export function AgendaPage() {
   const toast = useToast()
   const { role } = useSession()
-  const [scope, setScope] = useState('todos')
-  const [date, setDate] = useState<Date | null>(null)
-  const [openEvent, setOpenEvent] = useState<AgendaItem | null>(null)
+  const { events, loading, addEvent, updateEvent, removeEvent } = useAgenda()
+  const { getMember } = useProfiles()
+  const canManage = role === 'admin'
 
+  const [scope, setScope] = useState('todos')
+  const [openEvent, setOpenEvent] = useState<AgendaEvent | null>(null)
+  const [formOpen, setFormOpen] = useState(false)
+  const [editing, setEditing] = useState<AgendaEvent | null>(null)
+
+  const today = todayIso()
   const groups = useMemo(() => {
-    const filtered = scope === 'hoje' ? TEAM_AGENDA.filter((e) => e.day === TODAY) : TEAM_AGENDA
+    const filtered = scope === 'hoje' ? events.filter((e) => e.date === today) : events.filter((e) => e.date >= today)
     return groupByDay(filtered)
-  }, [scope])
+  }, [events, scope, today])
+
+  const submit = async (draft: Draft) => {
+    if (!draft.title.trim()) { toast.error('Informe um título'); return }
+    if (!draft.date) { toast.error('Informe a data'); return }
+    const payload: AgendaInput = {
+      date: draft.date,
+      time: draft.time.trim() || undefined,
+      title: draft.title.trim(),
+      meta: draft.meta.trim() || undefined,
+      category: draft.category,
+      location: draft.location.trim() || undefined,
+      meetingUrl: draft.meetingUrl.trim() || undefined,
+      description: draft.description.trim() || undefined,
+      people: draft.people,
+    }
+    const { error } = editing ? await updateEvent(editing.id, payload) : await addEvent(payload)
+    if (error) toast.error('Não foi possível salvar', error)
+    else toast.success(editing ? 'Compromisso atualizado' : 'Compromisso criado', draft.title)
+    setFormOpen(false)
+    setEditing(null)
+  }
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-8">
@@ -180,50 +336,45 @@ export function AgendaPage() {
         description="Compromissos, prazos e cerimônias da equipe."
         className="mb-6"
         actions={
-          role === 'admin' ? (
-            <Button
-              leftIcon={<Plus size={18} strokeWidth={1.5} />}
-              onClick={() => toast.success('Compromisso criado', 'Adicionado à agenda do time.')}
-            >
+          canManage ? (
+            <Button leftIcon={<Plus size={18} strokeWidth={1.5} />} onClick={() => { setEditing(null); setFormOpen(true) }}>
               Novo compromisso
             </Button>
           ) : undefined
         }
       />
 
-      <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
+      <div className="mb-6">
         <Tabs value={scope} onValueChange={setScope} variant="segmented">
           <TabList aria-label="Período">
             <Tab value="todos">Próximos</Tab>
             <Tab value="hoje">Hoje</Tab>
           </TabList>
         </Tabs>
-        <div className="w-52">
-          <DatePicker value={date} onChange={setDate} placeholder="Ir para data" />
-        </div>
       </div>
 
-      {groups.length === 0 ? (
+      {loading ? (
+        <div className="grid place-items-center py-24">
+          <Loader2 size={26} strokeWidth={1.5} className="animate-spin text-steel-300" aria-label="Carregando" />
+        </div>
+      ) : groups.length === 0 ? (
         <EmptyState
           icon={<CalendarDays size={22} strokeWidth={1.5} />}
           title="Nada por aqui"
-          description="Não há compromissos no período selecionado."
+          description={canManage ? 'Crie o primeiro compromisso do time.' : 'Não há compromissos no período.'}
+          action={canManage ? <Button onClick={() => { setEditing(null); setFormOpen(true) }}>Novo compromisso</Button> : undefined}
         />
       ) : (
         <div className="flex flex-col gap-8">
           {groups.map((g) => {
-            const isToday = g.day === TODAY
+            const isToday = g.date === today
             return (
-              <section key={`${g.day}-${g.month}`}>
+              <section key={g.date}>
                 <div className="mb-3 flex items-baseline gap-3">
                   <h2 className="font-display text-h3 font-semibold text-strong">
-                    {g.weekday}, {g.day} {g.month.toLowerCase()}
+                    {weekdayLabel(g.date)}, {dayLabel(g.date)} {monthLabel(g.date).toLowerCase()}
                   </h2>
-                  {isToday && (
-                    <Badge tone="steel" dot>
-                      hoje
-                    </Badge>
-                  )}
+                  {isToday && <Badge tone="steel" dot>hoje</Badge>}
                   <span className="font-mono text-mono-data text-faint">
                     {g.items.length} {g.items.length === 1 ? 'evento' : 'eventos'}
                   </span>
@@ -232,20 +383,18 @@ export function AgendaPage() {
                   {g.items.map((ev) => (
                     <AgendaRow
                       key={ev.id}
-                      day={ev.day}
-                      month={ev.month}
-                      time={ev.time}
+                      day={dayLabel(ev.date)}
+                      month={monthLabel(ev.date)}
+                      time={ev.time ?? ''}
                       title={ev.title}
-                      meta={ev.meta}
+                      meta={ev.meta ?? ''}
                       category={ev.category}
                       interactive
                       onClick={() => setOpenEvent(ev)}
                       trailing={
-                        ev.people ? (
+                        ev.people.length > 0 ? (
                           <AvatarGroup max={4}>
-                            {ev.people.map((p) => (
-                              <Avatar key={p} size="sm" name={p} />
-                            ))}
+                            {ev.people.map((id) => <Avatar key={id} size="sm" name={getMember(id)?.name ?? '?'} />)}
                           </AvatarGroup>
                         ) : undefined
                       }
@@ -258,16 +407,19 @@ export function AgendaPage() {
         </div>
       )}
 
-      <Card className="mt-8 flex items-center gap-3">
-        <span className="grid size-9 place-items-center rounded-md bg-steel-tint text-steel-300">
-          <CalendarDays size={18} strokeWidth={1.5} aria-hidden />
-        </span>
-        <p className="text-body-s text-muted">
-          Clique em um compromisso para ver detalhes — participantes, descrição e link da chamada.
-        </p>
-      </Card>
-
-      <EventModal event={openEvent} onClose={() => setOpenEvent(null)} />
+      <EventModal
+        event={openEvent}
+        canManage={canManage}
+        onClose={() => setOpenEvent(null)}
+        onEdit={() => { if (openEvent) { setEditing(openEvent); setOpenEvent(null); setFormOpen(true) } }}
+        onDelete={() => {
+          if (!openEvent) return
+          removeEvent(openEvent.id)
+          toast.success('Compromisso removido', openEvent.title)
+          setOpenEvent(null)
+        }}
+      />
+      <AgendaFormModal open={formOpen} editing={editing} onClose={() => { setFormOpen(false); setEditing(null) }} onSubmit={submit} />
     </div>
   )
 }
